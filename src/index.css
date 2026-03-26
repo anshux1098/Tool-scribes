@@ -1,0 +1,88 @@
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg: 38 33% 96%;
+    --surface: 0 0% 100%;
+    --s2: 36 28% 93%;
+    --s3: 34 25% 89%;
+    --border: 32 22% 85%;
+    --border-l: 30 18% 73%;
+    --primary: 152 43% 30%;
+    --primary-foreground: 0 0% 100%;
+    --accent: 150 38% 51%;
+    --accent-foreground: 0 0% 100%;
+    --text: 20 8% 11%;
+    --text-s: 25 5% 46%;
+    --text-m: 25 4% 64%;
+
+    --background: 38 33% 96%;
+    --foreground: 20 8% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 20 8% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 20 8% 11%;
+    --secondary: 36 28% 93%;
+    --secondary-foreground: 20 8% 11%;
+    --muted: 36 28% 93%;
+    --muted-foreground: 25 5% 46%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --input: 32 22% 85%;
+    --ring: 152 43% 30%;
+    --radius: 0.5rem;
+    --border-base: 32 22% 85%;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 20 8% 11%;
+    --sidebar-primary: 152 43% 30%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 36 28% 93%;
+    --sidebar-accent-foreground: 20 8% 11%;
+    --sidebar-border: 32 22% 85%;
+    --sidebar-ring: 152 43% 30%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    background-color: #F9F5EF;
+    color: #1C1917;
+    font-family: 'Geist', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+.font-syne {
+  font-family: 'Instrument Serif', Georgia, serif;
+}
+
+.font-dmsans {
+  font-family: 'Geist', system-ui, sans-serif;
+}
+
+/* Category chip colors - warm tones, not splashed everywhere */
+.cat-ai    { color: #B45309; background: rgba(180,83,9,0.08); }
+.cat-dev   { color: #1D4ED8; background: rgba(29,78,216,0.08); }
+.cat-design { color: #7E22CE; background: rgba(126,34,206,0.08); }
+.cat-prod  { color: #2D6A4F; background: rgba(45,106,79,0.08); }
+.cat-learn { color: #B45309; background: rgba(180,83,9,0.08); }
+.cat-util  { color: #374151; background: rgba(55,65,81,0.08); }
+
+/* Smooth row hover */
+.tool-row {
+  transition: background 0.12s ease;
+}
+.tool-row:hover {
+  background: rgba(45,106,79,0.035);
+}
