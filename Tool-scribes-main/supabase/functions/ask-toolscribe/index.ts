@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { checkRateLimit } from "../_shared/rate-limit.ts";
 import { askToolScribe } from "../_shared/ai-provider.ts";
+import { authenticate } from "../_shared/auth.ts";
 
 interface ToolRow {
   id: string;
@@ -52,6 +53,11 @@ const json = (data: unknown, status = 200) =>
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return json({}, 200);
   if (req.method !== "POST") return json({ success: false, message: "Method not allowed" }, 405);
+
+  // Every request here costs an LLM call. Require a signed-in caller so the
+  // endpoint cannot be driven anonymously.
+  const caller = await authenticate(req);
+  if (!caller) return json({ success: false, message: "Authentication required" }, 401);
 
   const clientIp = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown";
   const rate = checkRateLimit(clientIp);

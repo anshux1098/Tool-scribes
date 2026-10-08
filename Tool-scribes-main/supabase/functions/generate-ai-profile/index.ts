@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { checkRateLimit } from "../_shared/rate-limit.ts";
 import { generateToolProfile } from "../_shared/ai-provider.ts";
+import { authenticate } from "../_shared/auth.ts";
 
 interface RequestBody {
   toolId?: string;
@@ -51,6 +52,13 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return json({}, 200);
   if (req.method !== "POST") return json({ success: false, message: "Method not allowed" }, 405);
 
+  // ─── Authentication ─────────────────────────────────────────
+  // This function writes with the service role key, which bypasses RLS.
+  // Without this check any anonymous caller could rewrite any tool's
+  // ai_summary, and forceRegenerate would let them bill the AI provider.
+  const caller = await authenticate(req);
+  if (!caller) return json({ success: false, message: "Authentication required" }, 401);
+
   const clientIp = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown";
   const rate = checkRateLimit(clientIp);
   if (!rate.allowed) {
@@ -73,6 +81,13 @@ Deno.serve(async (req: Request) => {
 
   if (!isValidPublicUrl(url)) {
     return json({ success: false, message: "Invalid URL" }, 400);
+  }
+
+  // Writing an existing tool's profile is an admin action (the regenerate
+  // button on the tool page). Generation without a toolId is allowed for
+  // any signed-in user — that's the submission and moderation flows.
+  if (toolId && !caller.isAdmin) {
+    return json({ success: false, message: "Admin privileges required to update an existing tool" }, 403);
   }
 
   // ─── Cache check ──────────────────────────────────────────
