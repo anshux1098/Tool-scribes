@@ -1,11 +1,16 @@
 # Tool-scribes — Full Code Review
 
 > **Purpose of this file:** context handoff. If you are a new AI session, read this
-> file first — it contains a complete audit of the codebase as of this review. Do
-> **not** re-run a full file-by-file review; go straight to fixing or extending it.
+> file first — it contains a complete audit of the codebase. Do **not** re-run a
+> full file-by-file review; go straight to fixing or extending it.
 >
-> **Status:** review only — **no source files were modified.**
-> **Verified by running locally:** `npx tsc -b` → **152 TypeScript errors**.
+> ⚠️ **Read `FIX_PROGRESS.md` first.** It records what has already been fixed
+> (critical #1, #2, #3, #4, #16 are done) and what to do next. The findings
+> below are the **original** audit — some are now stale. Cross-check against
+> FIX_PROGRESS.md before acting on anything here.
+>
+> **Status at time of writing:** 126 TypeScript errors existed and `vite build`
+> never checked them. Both are now fixed (commit `862ace6`) — see FIX_PROGRESS.md.
 > `npx vitest run` → 17 tests passing, but near-tautological.
 > **Stack:** React 18 + Vite 8 + TypeScript + Supabase (Postgres/Auth/Storage/Edge Functions).
 > **Product:** curator tool-discovery platform — collections, reviews, vault, follows.
