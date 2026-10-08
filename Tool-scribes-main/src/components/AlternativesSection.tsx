@@ -1,5 +1,4 @@
 import { useEffect, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { GitBranch, Plus } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import AlternativeCard from '@/components/AlternativeCard';

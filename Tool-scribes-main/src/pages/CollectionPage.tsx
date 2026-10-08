@@ -33,10 +33,12 @@ export default function CollectionPage({
   useEffect(() => {
     if (!collection) return;
     setLoadingTools(true);
-    supabase
-      .from('collection_tools')
-      .select('tool_id')
-      .eq('collection_id', collection._uuid)
+    void Promise.resolve(
+      supabase
+        .from('collection_tools')
+        .select('tool_id')
+        .eq('collection_id', collection._uuid)
+    )
       .then(({ data }) => {
         setToolUuids((data ?? []).map(d => d.tool_id as string));
         setLoadingTools(false);
@@ -214,6 +216,20 @@ export default function CollectionPage({
                   >
                     <ExternalLink size={14} />
                   </a>
+                  {collection?._uuid && t._uuid && (
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        onRemoveFromCollection(collection.id, t._uuid!);
+                        toast.success(`Removed ${t.name} from this collection`);
+                      }}
+                      title="Remove from this collection"
+                      aria-label={`Remove ${t.name} from this collection`}
+                      className="p-1.5 rounded-lg hover:bg-s2 text-tv-text-s hover:text-red-500 transition-colors pointer-events-auto"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
                 </div>
               </motion.div>
             );

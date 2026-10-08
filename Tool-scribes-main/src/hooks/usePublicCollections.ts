@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Collection, ToolCategory } from '@/lib/types';
-import { supabase, isSupabaseConfigured, CollectionRow } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { hashId } from '@/lib/hashId';
 
 export type CollectionSort = 'trending' | 'newest' | 'followers' | 'updated' | 'clones';

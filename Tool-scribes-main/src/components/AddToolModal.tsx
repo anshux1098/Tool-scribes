@@ -1,14 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ToolCategory, CATEGORY_LABELS, CATEGORY_EMOJIS, CATEGORY_COLORS, CATEGORY_BG, CATEGORY_SHORT } from '@/lib/types';
+import { ToolCategory, NewTool, CATEGORY_LABELS, CATEGORY_EMOJIS, CATEGORY_COLORS, CATEGORY_BG, CATEGORY_SHORT } from '@/lib/types';
 import { fetchMetadata } from '@/lib/fetchMetadata';
 import FocusTrap from '@/components/FocusTrap';
 
 interface AddToolModalProps {
   open: boolean;
   onClose: () => void;
-  onAdd: (tool: { name: string; url: string; description: string; category: ToolCategory; icon: string; favicon: string; ogImage: string; isFree: boolean; platforms: string[]; signupRequired: boolean }) => void;
+  onAdd: (tool: NewTool) => void;
 }
 
 export default function AddToolModal({ open, onClose, onAdd }: AddToolModalProps) {

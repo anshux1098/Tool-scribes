@@ -1,9 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Loader2, Save, User, AtSign, FileText, Globe, MapPin, Github, Twitter, Linkedin, Hash, Eye, EyeOff, Bookmark, Link } from 'lucide-react';
+import { X, Loader2, Save, User, AtSign, FileText, Globe, MapPin, Github, Twitter, Linkedin, Eye, EyeOff, Link } from 'lucide-react';
 import { useCurrentProfile } from '@/hooks/useProfile';
 import { useAuth } from '@/hooks/useAuth';
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import FocusTrap from '@/components/FocusTrap';
 import AvatarUpload from '@/components/AvatarUpload';
 import { useStorageUpload } from '@/hooks/useStorageUpload';
@@ -381,7 +381,11 @@ export default function ProfileSettingsModal({ open, onClose, onSaved }: Profile
                 <div>
                   <label className="text-[10px] font-mono text-tv-text-m uppercase tracking-widest mb-2 block">Currently Loving (Max 3)</label>
                   <div className="space-y-2">
-                    {shelf.map((item, idx) => (
+                    {isShelfLoading ? (
+                      <p className="text-[12px] font-mono text-tv-text-m">Loading shelf…</p>
+                    ) : shelf.length === 0 ? (
+                      <p className="text-[12px] font-mono text-tv-text-m">Nothing on the shelf yet.</p>
+                    ) : shelf.map((item) => (
                       <div key={item.toolId} className="flex items-center justify-between bg-s2 p-2 rounded-lg">
                         <span className="text-[12px]">{item.name}</span>
                         <button onClick={() => {

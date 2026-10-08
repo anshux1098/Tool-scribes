@@ -49,6 +49,28 @@ export interface Tool {
   aiProfileVersion?: number;
 }
 
+/**
+ * The subset of Tool fields a user supplies when submitting a new tool.
+ * Everything else is server- or session-derived (identity, counters, vault
+ * state) and must never be accepted from client input.
+ */
+export type NewTool = Pick<
+  Tool,
+  'name' | 'url' | 'description' | 'category' | 'icon' | 'favicon' | 'ogImage'
+> &
+  Partial<
+    Pick<
+      Tool,
+      | 'screenshotUrl'
+      | 'priceModel'
+      | 'isOpenSource'
+      | 'requiresLogin'
+      | 'isFree'
+      | 'platforms'
+      | 'signupRequired'
+    >
+  >;
+
 export const CATEGORY_LABELS: Record<ToolCategory, string> = {
   ai: 'AI Tools',
   dev: 'Dev Tools',
@@ -161,6 +183,21 @@ export interface Profile {
   followerCount: number;
   followingCount: number;
 }
+
+export interface ReputationTier {
+  min: number;
+  label: string;
+  color: string;
+  bg: string;
+}
+
+export const REPUTATION_TIERS: ReputationTier[] = [
+  { min: 0, label: 'New Curator', color: '#78716C', bg: 'rgba(120,113,108,0.08)' },
+  { min: 25, label: 'Rising Curator', color: '#2563EB', bg: 'rgba(37,99,235,0.08)' },
+  { min: 100, label: 'Trusted Curator', color: '#059669', bg: 'rgba(5,150,105,0.08)' },
+  { min: 500, label: 'Expert Curator', color: '#7C3AED', bg: 'rgba(124,58,237,0.08)' },
+  { min: 1500, label: 'Legendary Curator', color: '#D97706', bg: 'rgba(217,119,6,0.08)' },
+];
 
 export const CATEGORY_EMOJIS: Record<ToolCategory, string> = {
   ai: '🤖',

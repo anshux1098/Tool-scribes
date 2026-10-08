@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Search, ArrowUp, BookmarkPlus, BookmarkCheck, ExternalLink, Plus, ArrowRight, Sparkles, TrendingUp, Grid3X3, Layers, Code, Palette, Zap, BookOpen, Wrench, Clock, GitBranch } from 'lucide-react';
-import { Tool, ToolCategory, Collection, CATEGORY_LABELS, CATEGORY_COLORS, CATEGORY_BG, CATEGORY_SHORT, CATEGORY_EMOJIS } from '@/lib/types';
+import { Tool, ToolCategory, Collection, CATEGORY_LABELS, CATEGORY_COLORS, CATEGORY_BG, CATEGORY_SHORT } from '@/lib/types';
 import { formatDistanceToNow } from 'date-fns';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -39,11 +39,10 @@ export default function DiscoverPage({ tools, onUpvote, onSave, onAddTool, loadi
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<ToolCategory | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>('newest');
-  const [publicCollections, setPublicCollections] = useState<(Collection & { _uuid: string; followerCount?: number; curatorUsername?: string })[]>([]);
   const [trendingCollections, setTrendingCollections] = useState<(Collection & { _uuid: string; followerCount?: number; curatorUsername?: string })[]>([]);
-  const [saveCounts, setSaveCounts] = useState<Record<number, number>>({});
+  /** vault_items rows per tool, keyed by tool uuid. */
+  const [saveCounts, setSaveCounts] = useState<Record<string, number>>({});
   const [vaultRecs, setVaultRecs] = useState<RecItem[]>([]);
-  const [vaultRecsLoading, setVaultRecsLoading] = useState(false);
   const [popularAlts, setPopularAlts] = useState<{ toolId: string; toolName: string; toolIcon: string; toolFavicon: string; alternatives: { id: string; name: string; votes: number }[] }[]>([]);
   const mountedRef = useRef(true);
 
@@ -55,22 +54,23 @@ export default function DiscoverPage({ tools, onUpvote, onSave, onAddTool, loadi
 
   useEffect(() => {
     if (user && !loading) {
-      setVaultRecsLoading(true);
       buildVaultRecs(user.id, 6).then(items => {
         if (mountedRef.current) setVaultRecs(items);
-      }).catch((e) => console.error('[DiscoverPage] build vault recommendations failed:', e)).finally(() => { if (mountedRef.current) setVaultRecsLoading(false); });
+      }).catch((e) => console.error('[DiscoverPage] build vault recommendations failed:', e));
     }
   }, [user?.id, loading]);
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
     // Fetch public collections
-    supabase
-      .from('collections')
-      .select('*, collection_tools(count)')
-      .eq('is_public', true)
-      .order('updated_at', { ascending: false })
-      .limit(6)
+    void Promise.resolve(
+      supabase
+        .from('collections')
+        .select('*, collection_tools(count)')
+        .eq('is_public', true)
+        .order('updated_at', { ascending: false })
+        .limit(6)
+    )
       .then(({ data }) => {
         if (!data || !mountedRef.current) return;
         const colIds = data.map(r => (r as Record<string, unknown>).id as string);
@@ -88,10 +88,11 @@ export default function DiscoverPage({ tools, onUpvote, onSave, onAddTool, loadi
             updatedAt: new Date(r.updated_at as string).getTime(),
           };
         });
-        if (mountedRef.current) setPublicCollections(mapped);
         // Fetch follower counts for trending
         if (colIds.length > 0) {
-          supabase.from('collection_followers').select('collection_id').in('collection_id', colIds)
+          void Promise.resolve(
+            supabase.from('collection_followers').select('collection_id').in('collection_id', colIds)
+          )
             .then(({ data: fData }) => {
               if (!mountedRef.current) return;
               const fMap = new Map<string, number>();
@@ -111,20 +112,18 @@ export default function DiscoverPage({ tools, onUpvote, onSave, onAddTool, loadi
       })
       .catch((e) => console.error('[DiscoverPage] fetch public collections failed:', e));
     // Fetch save counts
-    supabase
-      .from('vault_items')
-      .select('tool_id')
+    Promise.resolve(
+      supabase
+        .from('vault_items')
+        .select('tool_id')
+    )
       .then(({ data }) => {
         if (!data || !mountedRef.current) return;
         const counts: Record<string, number> = {};
         for (const row of data as Array<{ tool_id: string }>) {
           counts[row.tool_id] = (counts[row.tool_id] || 0) + 1;
         }
-        const byNumId: Record<number, number> = {};
-        for (const tool of tools) {
-          if (tool._uuid && counts[tool._uuid]) byNumId[tool.id] = counts[tool._uuid];
-        }
-        if (mountedRef.current) setSaveCounts(byNumId);
+        setSaveCounts(counts);
       })
       .catch((e) => console.error('[DiscoverPage] fetch save counts failed:', e));
   }, []);
@@ -135,7 +134,7 @@ export default function DiscoverPage({ tools, onUpvote, onSave, onAddTool, loadi
     const scores = new Map<number, number>();
     for (const t of tools) {
       const hoursSinceAdded = (now - t.addedAt) / 3600000;
-      const saves = saveCounts[t.id] || 0;
+      const saves = (t._uuid && saveCounts[t._uuid]) || 0;
       const score = (t.upvotes * 3 + saves * 2) / Math.pow(hoursSinceAdded + 2, 1.5);
       scores.set(t.id, score);
     }
@@ -308,7 +307,6 @@ export default function DiscoverPage({ tools, onUpvote, onSave, onAddTool, loadi
             {trending.map((tool, i) => {
               const catBg = CATEGORY_BG[tool.category];
               const catColor = CATEGORY_COLORS[tool.category];
-              const score = trendingScores.get(tool.id) || 0;
               return (
                 <motion.button
                   key={tool.id}
@@ -449,10 +447,10 @@ export default function DiscoverPage({ tools, onUpvote, onSave, onAddTool, loadi
                 </div>
                 <div className="flex items-center gap-2 text-[11px] font-mono text-tv-text-m">
                   <span>{col.toolCount} tool{col.toolCount !== 1 ? 's' : ''}</span>
-                  {(col as Record<string, unknown>).followerCount !== undefined && (
+                  {col.followerCount !== undefined && (
                     <>
                       <span className="text-tv-border">·</span>
-                      <span>{(col as Record<string, unknown>).followerCount as number} followers</span>
+                      <span>{col.followerCount} followers</span>
                     </>
                   )}
                 </div>

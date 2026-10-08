@@ -13,7 +13,7 @@ export default function AdminReviewWrapper() {
   const [loading, setLoading] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [submitOpen, setSubmitOpen] = useState(false);
-  const { user, isAdmin, isModerator, loading: authLoading } = useAuth();
+  const { isAdmin, isModerator, loading: authLoading } = useAuth();
   const search = useSearch();
 
   const load = async () => {

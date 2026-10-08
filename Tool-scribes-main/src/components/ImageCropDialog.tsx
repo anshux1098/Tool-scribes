@@ -22,7 +22,8 @@ export default function ImageCropDialog({
   const [isDragging, setIsDragging] = useState(false);
   const [crop, setCrop] = useState({ x: 0, y: 0, size: 200 });
   const [imageSize, setImageSize] = useState({ w: 0, h: 0 });
-  const [scale, setScale] = useState(1);
+  /** Zoom factor. Zoom UI is not wired up yet, so this is fixed at 1. */
+  const scale = 1;
   const dragStart = useRef({ x: 0, y: 0, cropX: 0, cropY: 0 });
 
   useEffect(() => {
@@ -82,7 +83,6 @@ export default function ImageCropDialog({
   console.log('[ImageCropDialog] render', { open, imageSize, crop, imageUrl });
   const displaySize = 360;
   const aspect = imageSize.w > 0 && imageSize.h > 0 ? imageSize.w / imageSize.h : 1;
-  const imgDisplayW = displaySize;
   const imgDisplayH = displaySize / aspect;
   const cropDisplaySize = imageSize.w > 0 ? (crop.size / imageSize.w) * displaySize : 0;
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Save, Loader2, User, AtSign, FileText, Globe, Moon, Sun, Bell, Trash2, Download, Eye, EyeOff, LogOut, Palette, Monitor } from 'lucide-react';
+import { Save, Loader2, User, AtSign, FileText, Moon, Sun, Bell, Trash2, Download, Eye, LogOut, Palette, Monitor } from 'lucide-react';
 import { useAuth, signOut } from '@/hooks/useAuth';
 import { useCurrentProfile } from '@/hooks/useProfile';
 import { useTheme } from 'next-themes';

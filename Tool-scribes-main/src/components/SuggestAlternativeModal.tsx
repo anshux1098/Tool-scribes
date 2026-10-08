@@ -49,7 +49,7 @@ export default function SuggestAlternativeModal({ open, onClose, toolUuid, toolN
   const handleSubmit = async () => {
     if (!user || !selectedId) return;
     setSubmitting(true);
-    const { error } = await suggestAlternative(toolUuid, selectedId, user.id, reason);
+    const { error } = await suggestAlternative(toolUuid, selectedId, user.id);
     setSubmitting(false);
     if (error) {
       toast.error(error);

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Loader2, Mail, Lock, ArrowLeft } from 'lucide-react';
+import { X, Loader2, Mail, Lock } from 'lucide-react';
 import { signInWithEmail, signUpWithEmail, resetPasswordForEmail } from '@/hooks/useAuth';
 import FocusTrap from '@/components/FocusTrap';
 

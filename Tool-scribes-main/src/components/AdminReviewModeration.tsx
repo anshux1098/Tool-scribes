@@ -3,7 +3,6 @@ import { motion } from 'framer-motion';
 import { RefreshCw, EyeOff, Trash2, CheckCircle } from 'lucide-react';
 import { supabase, isSupabaseConfigured, ReviewRow } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
-import { formatDistanceToNow } from 'date-fns';
 
 const PAGE_SIZE = 50;
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Tool, ToolCategory } from '@/lib/types';
+import { Tool, ToolCategory, NewTool } from '@/lib/types';
 import { supabase, isSupabaseConfigured, supabaseInitError } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { hashId } from '@/lib/hashId';
@@ -119,7 +119,7 @@ export function useTools() {
         const authorId = (row as Record<string, unknown>).added_by as string | undefined;
         if (authorId && profileMap.has(authorId)) {
           const p = profileMap.get(authorId)!;
-          t.addedByUsername = p.username;
+          if (p.username) t.addedByUsername = p.username;
           t.addedByDisplayName = p.displayName || p.username || undefined;
         }
         return t;
@@ -153,13 +153,19 @@ export function useTools() {
     return toolsRef.current.find(t => t.id === numId)?._uuid ?? null;
   }, []);
 
-  const addTool = useCallback(async (
-    tool: Omit<Tool, 'id' | 'addedAt' | 'upvotes' | 'upvotedByMe' | 'savedToVault' | 'isFavorite'>
-  ) => {
+  const addTool = useCallback(async (tool: NewTool) => {
     if (!user) return;
     const tempId = Date.now();
-    const optimistic = {
-      ...tool, id: tempId, _uuid: '', addedAt: Date.now(),
+    const optimistic: Tool & { _uuid: string } = {
+      ...tool,
+      screenshotUrl: tool.screenshotUrl ?? '',
+      priceModel: tool.priceModel ?? 'free',
+      isOpenSource: tool.isOpenSource ?? false,
+      requiresLogin: tool.requiresLogin ?? false,
+      isFree: tool.isFree ?? true,
+      platforms: tool.platforms ?? ['web'],
+      signupRequired: tool.signupRequired ?? false,
+      id: tempId, _uuid: '', addedAt: Date.now(),
       upvotes: 0, upvotedByMe: false, savedToVault: true, isFavorite: false,
     };
     setTools(prev => [optimistic, ...prev]);

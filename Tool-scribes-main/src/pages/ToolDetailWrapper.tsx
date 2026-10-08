@@ -17,7 +17,6 @@ import { useSearch } from '@/hooks/useSearch';
 import { supabase } from '@/lib/supabase';
 import { fetchToolHealth } from '@/lib/health';
 import { useReviews } from '@/hooks/useReviews';
-import { SEO } from '@/components/SEO';
 import { generateAiProfile } from '@/lib/generate-ai-profile';
 import { toast } from 'sonner';
 
@@ -38,7 +37,7 @@ export default function ToolDetailWrapper() {
 
   const currentTool = id ? tools.find(t => t.id === Number(id)) : null;
   const [healthStatus, setHealthStatus] = useState<string | undefined>();
-  const { reviews, myReview, loading: reviewsLoading, submitReview, deleteReview } = useReviews(currentTool?._uuid);
+  const { reviews, myReview, submitReview, deleteReview } = useReviews(currentTool?._uuid);
   const mountedRef = useRef(true);
 
   useEffect(() => { return () => { mountedRef.current = false; }; }, []);
@@ -61,10 +60,12 @@ export default function ToolDetailWrapper() {
 
   useEffect(() => {
     if (!currentTool?._uuid || !user) { setToolCollectionIds([]); return; }
-    supabase
-      .from('collection_tools')
-      .select('collection_id')
-      .eq('tool_id', currentTool._uuid)
+    void Promise.resolve(
+      supabase
+        .from('collection_tools')
+        .select('collection_id')
+        .eq('tool_id', currentTool._uuid)
+    )
       .then(({ data }) => {
         if (!mountedRef.current) return;
         if (!data) { setToolCollectionIds([]); return; }

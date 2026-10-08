@@ -19,7 +19,6 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 export function useDustCollector(vaultTools: (Tool & { _uuid?: string })[]) {
   const { user } = useAuth();
   const [dustTools, setDustTools] = useState<DustTool[]>([]);
-  const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
 
   const loadDust = useCallback(async () => {
@@ -37,7 +36,6 @@ export function useDustCollector(vaultTools: (Tool & { _uuid?: string })[]) {
         .eq('user_id', user.id)
         .eq('status', 'dismissed');
 
-      const dismissed = new Set<number>();
       const dismissedUuids = new Set((dustRows ?? []).map(r => r.tool_id as string));
 
       // Find stale tools: saved > 30 days ago, visit_count = 0
@@ -60,7 +58,6 @@ export function useDustCollector(vaultTools: (Tool & { _uuid?: string })[]) {
       }));
 
       setDustTools(mapped);
-      setDismissedIds(dismissed);
     } catch (e) { console.error('[useDustCollector] loadDust failed:', e); } finally {
       setLoading(false);
     }
@@ -73,7 +70,6 @@ export function useDustCollector(vaultTools: (Tool & { _uuid?: string })[]) {
   const dismissTool = useCallback(async (toolId: number) => {
     const tool = vaultTools.find(t => t.id === toolId);
     if (!tool?._uuid || !user) return;
-    setDismissedIds(prev => new Set(prev).add(toolId));
     setDustTools(prev => prev.filter(t => t.id !== toolId));
     try {
       await supabase.from('dust_items').upsert(

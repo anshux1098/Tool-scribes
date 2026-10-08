@@ -1,5 +1,4 @@
 import { supabase } from '@/lib/supabase';
-import { hashId } from '@/lib/hashId';
 
 export interface Alternative {
   id: string;
@@ -72,17 +71,13 @@ export async function fetchAlternatives(toolUuid: string): Promise<Alternative[]
   }
 
   // Check user votes
+  // Only the caller's own votes matter, and only for these alternatives.
   const { data: userVotes } = await supabase
     .from('alternative_votes')
-    .select('alternative_id');
+    .select('alternative_id')
+    .in('alternative_id', rows.map(r => r.id as string));
 
   const votedSet = new Set((userVotes || []).map(v => v.alternative_id as string));
-
-  const uidMap = new Map<string, string>();
-  for (const v of (vaultCounts || [])) {
-    const tid = v.tool_id as string;
-    saveCountMap.set(tid, (saveCountMap.get(tid) || 0) + 1);
-  }
 
   return rows.map(r => {
     const t = toolMap.get(r.alternative_tool_id as string);
@@ -108,11 +103,17 @@ export async function fetchAlternatives(toolUuid: string): Promise<Alternative[]
   });
 }
 
+/**
+ * Suggests a bidirectional alternative pairing. Both rows are inserted together
+ * and are idempotent — re-suggesting an existing pair is a no-op rather than an error.
+ *
+ * Note: tool_alternatives has no `reason` column, so any caller-supplied
+ * rationale is not persisted. Add the column before accepting one.
+ */
 export async function suggestAlternative(
   toolUuid: string,
   alternativeToolUuid: string,
-  userId: string,
-  reason?: string
+  userId: string
 ): Promise<{ error?: string }> {
   // Insert both directions for bidirectional relationship
   const rows = [
@@ -120,7 +121,10 @@ export async function suggestAlternative(
     { tool_id: alternativeToolUuid, alternative_tool_id: toolUuid, created_by: userId, approved: false },
   ];
 
-  const { error } = await supabase.from('tool_alternatives').insert(rows);
+  const { error } = await supabase.from('tool_alternatives').upsert(rows, {
+    onConflict: 'tool_id,alternative_tool_id',
+    ignoreDuplicates: true,
+  });
   if (error) return { error: error.message };
   return {};
 }

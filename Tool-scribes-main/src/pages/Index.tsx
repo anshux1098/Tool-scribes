@@ -34,7 +34,7 @@ export default function Index() {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const { user } = useAuth();
   const { tools, loading, error, addTool, toggleFavorite, toggleUpvote, saveToVault, removeFromVault, refetch } = useTools();
-  const { collections, loading: colsLoading, createCollection, deleteCollection, renameCollection } = useCollections();
+  const { collections, loading: colsLoading, createCollection } = useCollections();
   const search = useSearch();
 
   const handleAddTool = () => {

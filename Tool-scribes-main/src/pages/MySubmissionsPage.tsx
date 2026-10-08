@@ -15,19 +15,22 @@ export default function MySubmissionsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) { setLoading(false); return; }
     if (!isSupabaseConfigured) { setLoading(false); return; }
 
-    supabase.from('tool_submissions')
-      .select('*')
-      .eq('submitted_by', user.id)
-      .order('created_at', { ascending: false })
+    void Promise.resolve(
+      supabase.from('tool_submissions')
+        .select('*')
+        .eq('submitted_by', user.id)
+        .order('created_at', { ascending: false })
+    )
       .then(({ data, error }) => {
         if (error) { console.error('[MySubmissionsPage] fetch error', error); return; }
         if (data) {
           setSubmissions(data.map(mapRow));
         }
       })
+      .catch((e) => console.error('[MySubmissionsPage] fetch failed:', e))
       .finally(() => setLoading(false));
   }, [user]);
 

@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Globe, Heart, Copy, Users } from 'lucide-react';
+import { Globe, Heart, Copy } from 'lucide-react';
 import { Collection } from '@/lib/types';
 import { formatDistanceToNow } from 'date-fns';
 

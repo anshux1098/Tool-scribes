@@ -21,6 +21,12 @@ interface NavbarProps {
   onCreateCollection?: () => void;
 }
 
+/** Platform string for ⌘K vs Ctrl+K hints. userAgentData is Chromium-only. */
+function detectPlatform(): string | undefined {
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  return nav.userAgentData?.platform ?? nav.platform;
+}
+
 export default function Navbar({ activeTab, onTabChange, onAddTool, onAuthClick, onSearchClick, onAskClick, onSubmitTool, onCreateCollection }: NavbarProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -350,7 +356,7 @@ export default function Navbar({ activeTab, onTabChange, onAddTool, onAuthClick,
             <Search size={14} />
             <span className="hidden sm:inline text-[11px] font-mono text-tv-text-m">Search</span>
             <kbd className="hidden lg:inline-flex px-1 py-0.5 rounded bg-s2 text-[10px] font-mono text-tv-text-m border border-tv-border">
-              {(navigator.userAgentData?.platform ?? navigator.platform)?.includes('Mac') ? '⌘K' : 'Ctrl+K'}
+              {(detectPlatform() ?? '').includes('Mac') ? '⌘K' : 'Ctrl+K'}
             </kbd>
           </button>
         )}

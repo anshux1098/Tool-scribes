@@ -10,7 +10,7 @@ import { SEO } from '@/components/SEO';
 export default function MyCollectionsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { collections, loading, createCollection, renameCollection, deleteCollection, togglePublic, refetch } = useCollections();
+  const { collections, loading, createCollection, renameCollection, deleteCollection, togglePublic } = useCollections();
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');

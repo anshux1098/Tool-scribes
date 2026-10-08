@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { Review } from '@/lib/types';
 import { supabase, isSupabaseConfigured, ReviewRow } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
-import { notifyNewReview } from '@/lib/notifications';
 import { hashId } from '@/lib/hashId';
 
 const PAGE_SIZE = 100;

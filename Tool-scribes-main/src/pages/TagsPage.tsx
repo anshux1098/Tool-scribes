@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Hash, ArrowLeft, Search, TrendingUp } from 'lucide-react';
+import { Hash, ArrowLeft, Search } from 'lucide-react';
 import { useTags } from '@/lib/tags';
 import TagSuggestModal from '@/components/TagSuggestModal';
 import { useAuth } from '@/hooks/useAuth';

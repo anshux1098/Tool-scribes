@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { RefreshCw, CheckCircle, AlertTriangle, Clock, Archive, Globe } from 'lucide-react';
+import { RefreshCw, CheckCircle, Archive, Globe } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import ToolHealthBadge from '@/components/ToolHealthBadge';
 import { useAuth } from '@/hooks/useAuth';

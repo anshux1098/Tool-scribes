@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Edit3, Trash2, Loader2, PenLine, ExternalLink, Star, XCircle } from 'lucide-react';
-import { Review, CATEGORY_EMOJIS } from '@/lib/types';
+import { Review } from '@/lib/types';
 import { supabase, isSupabaseConfigured, ReviewRow } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { formatDistanceToNow } from 'date-fns';

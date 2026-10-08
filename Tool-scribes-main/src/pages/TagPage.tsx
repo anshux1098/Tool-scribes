@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { SEO } from '@/components/SEO';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Hash, Users, Wrench, Bell, BellOff, ExternalLink } from 'lucide-react';
@@ -39,7 +38,14 @@ export default function TagPage() {
             icon: (r.icon as string) ?? '🔧',
             favicon: (r.favicon as string) ?? '',
             ogImage: (r.og_image as string) ?? '',
+            screenshotUrl: (r.screenshot_url as string) ?? '',
             upvotes: (r.upvotes as number) ?? 0,
+            priceModel: (r.price_model as Tool['priceModel']) ?? 'free',
+            isOpenSource: (r.is_open_source as boolean) ?? false,
+            requiresLogin: (r.requires_login as boolean) ?? false,
+            isFree: (r.is_free as boolean) ?? true,
+            platforms: (r.platforms as string[]) ?? ['web'],
+            signupRequired: (r.signup_required as boolean) ?? false,
             upvotedByMe: false,
             savedToVault: false,
             isFavorite: false,

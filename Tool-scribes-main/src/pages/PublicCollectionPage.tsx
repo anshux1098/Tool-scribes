@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowLeft, ExternalLink, Copy, Check, BookmarkPlus, Globe, Heart, Users, TrendingUp, Clock, Lock, Trash2, Edit3, Camera, Loader2, X } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Copy, Check, BookmarkPlus, Globe, Heart, Users, TrendingUp, Clock, Lock, Trash2, Edit3, Camera, X } from 'lucide-react';
 import { Tool, CATEGORY_LABELS, CATEGORY_COLORS, CATEGORY_BG } from '@/lib/types';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
@@ -126,7 +126,14 @@ export default function PublicCollectionPage() {
             icon: (row.icon as string) ?? '',
             favicon: (row.favicon as string) ?? '',
             ogImage: (row.og_image as string) ?? '',
+            screenshotUrl: (row.screenshot_url as string) ?? '',
             upvotes: (row.upvotes as number) ?? 0,
+            priceModel: (row.price_model as Tool['priceModel']) ?? 'free',
+            isOpenSource: (row.is_open_source as boolean) ?? false,
+            requiresLogin: (row.requires_login as boolean) ?? false,
+            isFree: (row.is_free as boolean) ?? true,
+            platforms: (row.platforms as string[]) ?? ['web'],
+            signupRequired: (row.signup_required as boolean) ?? false,
             upvotedByMe: false,
             savedToVault: false,
             isFavorite: false,
@@ -506,7 +513,6 @@ export default function PublicCollectionPage() {
             tools.map((t, i) => {
               const catColor = CATEGORY_COLORS[t.category];
               const catBg = CATEGORY_BG[t.category];
-              const domain = (() => { try { return new URL(t.url).hostname.replace('www.', ''); } catch { return t.url; } })();
               return (
                 <motion.div
                   key={t.id}

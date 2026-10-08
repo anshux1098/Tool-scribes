@@ -23,11 +23,17 @@ export default function ReviewCard({ review }: ReviewCardProps) {
 
   useEffect(() => {
     if (!isSupabaseConfigured || !review.toolId) return;
-    supabase.from('tools').select('name, icon, favicon').eq('id', review.toolId).maybeSingle()
-      .then(({ data }) => {
+    let cancelled = false;
+    void Promise.resolve(
+      supabase.from('tools').select('name, icon, favicon').eq('id', review.toolId).maybeSingle()
+    )
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { console.error('[ReviewCard] fetch tool info failed:', error); return; }
         if (data) setToolInfo(data as { name: string; icon: string; favicon: string });
       })
       .catch((e) => console.error('[ReviewCard] fetch tool info failed:', e));
+    return () => { cancelled = true; };
   }, [review.toolId]);
 
   if (!hasContent) return null;

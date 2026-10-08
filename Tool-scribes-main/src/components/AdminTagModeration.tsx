@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Search, Check, X, ExternalLink, Hash } from 'lucide-react';
+import { Search, Check, X, Hash } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
 import { Tag, fetchPendingTags, moderateTag } from '@/lib/tags';
-import { formatDistanceToNow } from 'date-fns';
 
 export default function AdminTagModeration() {
   const { user, isAdmin: admin } = useAuth();

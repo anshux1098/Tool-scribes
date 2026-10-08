@@ -1,12 +1,10 @@
-import { useState, useEffect } from 'react';
-import { SEO } from '@/components/SEO';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Search, TrendingUp, Sparkles, Clock, Heart, Copy, ArrowRight, Plus, Layers, Grid3X3, Loader2 } from 'lucide-react';
-import { ToolCategory, CATEGORY_LABELS, CATEGORY_COLORS, CATEGORY_BG, CATEGORY_SHORT } from '@/lib/types';
+import { Search, TrendingUp, Sparkles, Clock, Heart, Copy, Plus, Layers, Loader2 } from 'lucide-react';
+import { CATEGORY_COLORS, CATEGORY_SHORT } from '@/lib/types';
 import { usePublicCollections, CollectionSort, EnhancedCollection } from '@/hooks/usePublicCollections';
 import CollectionCard from '@/components/CollectionCard';
-import { formatDistanceToNow } from 'date-fns';
 
 const SORT_OPTIONS: { key: CollectionSort; label: string; icon: typeof TrendingUp }[] = [
   { key: 'trending', label: 'Trending', icon: TrendingUp },
@@ -14,15 +12,6 @@ const SORT_OPTIONS: { key: CollectionSort; label: string; icon: typeof TrendingU
   { key: 'followers', label: 'Most Followed', icon: Heart },
   { key: 'updated', label: 'Recently Updated', icon: Clock },
   { key: 'clones', label: 'Most Cloned', icon: Copy },
-];
-
-const ALL_CATEGORIES: { key: ToolCategory; label: string; desc: string }[] = [
-  { key: 'ai', label: 'AI', desc: 'AI & ML tools' },
-  { key: 'dev', label: 'Developer', desc: 'Dev tools & APIs' },
-  { key: 'design', label: 'Design', desc: 'Design & creative' },
-  { key: 'prod', label: 'Productivity', desc: 'Get more done' },
-  { key: 'learn', label: 'Learning', desc: 'Courses & knowledge' },
-  { key: 'util', label: 'Utilities', desc: 'Everyday useful tools' },
 ];
 
 export default function CollectionsHubPage() {

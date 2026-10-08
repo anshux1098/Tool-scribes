@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, X, ExternalLink, Archive, Hash, Bookmark } from 'lucide-react';
+import { Search, X, Archive, Hash, Bookmark } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { SearchGroupedResults, SearchResultItem } from '@/lib/search';
 import { ToolCategory, CATEGORY_COLORS, CATEGORY_BG, CATEGORY_SHORT } from '@/lib/types';
@@ -67,7 +67,7 @@ export default function SearchEverywhere({
           <span className="text-[10px] font-mono text-tv-text-m uppercase tracking-widest">{title}</span>
           <span className="text-[10px] font-mono text-tv-text-m">— {items.length}</span>
         </div>
-        {items.map((item, i) => {
+        {items.map((item) => {
           const catColor = item.category ? CATEGORY_COLORS[item.category] : undefined;
           const catBg = item.category ? CATEGORY_BG[item.category] : undefined;
           return (

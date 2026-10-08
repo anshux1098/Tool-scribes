@@ -1,12 +1,12 @@
 import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Search } from 'lucide-react';
+import { Plus, Search, Trash2 } from 'lucide-react';
 import VaultGridCard from '@/components/VaultGridCard';
 import CollectionCard from '@/components/CollectionCard';
 import CategoryFilter from '@/components/CategoryFilter';
 import SkeletonToolCard from '@/components/SkeletonToolCard';
 import VaultRecommendations from '@/components/VaultRecommendations';
-import { Tool, ToolCategory, Collection, CATEGORY_SHORT, CATEGORY_COLORS, CATEGORY_BG } from '@/lib/types';
+import { Tool, ToolCategory, Collection } from '@/lib/types';
 import { formatDistanceToNow } from 'date-fns';
 import { useAuth } from '@/hooks/useAuth';
 import { useDustCollector } from '@/hooks/useDustCollector';
@@ -26,10 +26,6 @@ interface VaultPageProps {
 }
 
 const categories: (ToolCategory | 'all')[] = ['all', 'ai', 'dev', 'design', 'prod', 'learn', 'util'];
-
-const categoryCountsMap: Record<ToolCategory | 'all', string> = {
-  all: 'All', ai: 'AI', dev: 'Dev', design: 'Design', prod: 'Prod', learn: 'Learn', util: 'Util',
-};
 
 export default function VaultPage({ tools, onToggleFavorite, onRemoveFromVault, onSaveToVault, onAddTool, loading, collections, collectionsLoading, onCreateCollection }: VaultPageProps) {
   const [search, setSearch] = useState('');
@@ -206,8 +202,11 @@ export default function VaultPage({ tools, onToggleFavorite, onRemoveFromVault, 
           <div className="flex flex-wrap gap-2">
             {dustTools.slice(0, 6).map(dt => (
               <span key={dt.id} className="inline-flex items-center gap-1 px-2 py-1 rounded bg-amber-500/10 text-[11px] font-mono text-amber-700">
-                {dt.toolName}
-                <button onClick={async () => { try { await dismissTool(dt.id); toast.success('Tool dismissed'); } catch { toast.error('Failed to dismiss tool'); } }} className="hover:opacity-60">×</button>
+                {dt.name}
+                <button aria-label={`Dismiss ${dt.name}`} onClick={async () => { try { await dismissTool(dt.id); toast.success('Tool dismissed'); } catch { toast.error('Failed to dismiss tool'); } }} className="hover:opacity-60">×</button>
+                <button aria-label={`Remove ${dt.name} from your vault`} onClick={async () => { try { await removeFromVault(dt.id); toast.success(`${dt.name} removed from vault`); } catch { toast.error('Failed to remove tool'); } }} className="hover:opacity-60 hover:text-red-500">
+                  <Trash2 size={11} />
+                </button>
               </span>
             ))}
           </div>

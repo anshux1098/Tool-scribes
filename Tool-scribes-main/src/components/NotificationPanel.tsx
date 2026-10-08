@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Heart, Bookmark, PenLine, CheckCircle, Plus, RefreshCw, UserPlus, Layers, Loader2, Bell } from 'lucide-react';
+import { Heart, PenLine, CheckCircle, Plus, RefreshCw, UserPlus, Layers, Loader2, Bell } from 'lucide-react';
 import { NotificationItem, NotificationType } from '@/hooks/useNotifications';
 import { formatDistanceToNow } from 'date-fns';
 import { hashId } from '@/lib/hashId';

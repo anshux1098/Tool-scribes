@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, X, ExternalLink, Loader2, Clock, CheckCircle, AlertTriangle, Sparkles } from 'lucide-react';
+import { Check, X, ExternalLink, Loader2, Clock, CheckCircle, AlertTriangle } from 'lucide-react';
 import { ToolSubmission, SubmissionStatus, approveSubmission, rejectSubmission } from '@/lib/submission';
 import { CATEGORY_COLORS, CATEGORY_BG, CATEGORY_SHORT } from '@/lib/types';
 import { formatDistanceToNow } from 'date-fns';

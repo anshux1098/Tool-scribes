@@ -1,11 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { SearchFilters, SearchGroupedResults, search } from '@/lib/search';
-import { useAuth } from '@/hooks/useAuth';
 
 const DEBOUNCE_MS = 250;
 
 export function useSearch() {
-  const { user } = useAuth();
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState<SearchFilters>({ query: '' });
   const [results, setResults] = useState<SearchGroupedResults>({ vault: [], community: [], collections: [], total: 0 });

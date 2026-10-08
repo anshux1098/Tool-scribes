@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -11,11 +11,16 @@ export const supabaseInitError = !SUPABASE_URL
     ? 'Missing environment variable: VITE_SUPABASE_PUBLISHABLE_KEY'
     : null;
 
+/**
+ * Untyped client. `ReturnType<typeof createClient>` resolves to the generic
+ * defaults rather than the client we actually build, so the type is stated
+ * explicitly. Every row type used in this codebase is hand-declared below.
+ */
 export const supabase = isSupabaseConfigured
   ? createClient(SUPABASE_URL!, SUPABASE_PUBLISHABLE_KEY!)
-  : (undefined as unknown as ReturnType<typeof createClient>);
+  : (undefined as unknown as SupabaseClient);
 
-export function getSupabase(): ReturnType<typeof createClient> {
+export function getSupabase(): SupabaseClient {
   if (!isSupabaseConfigured) {
     throw new Error('Supabase not configured');
   }

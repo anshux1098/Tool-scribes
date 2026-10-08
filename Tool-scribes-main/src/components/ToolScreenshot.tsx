@@ -13,7 +13,7 @@ interface ToolScreenshotProps {
   className?: string;
 }
 
-export default function ToolScreenshot({ screenshotUrl, ogImage, toolName, toolIcon, canUpload, toolUuid, onUpdate, className = '' }: ToolScreenshotProps) {
+export default function ToolScreenshot({ screenshotUrl, ogImage, toolName, canUpload, toolUuid, onUpdate, className = '' }: ToolScreenshotProps) {
   const [imgError, setImgError] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);

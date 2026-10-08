@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Loader2, X, ExternalLink, ArrowRight } from 'lucide-react';
+import { Sparkles, Loader2, X, ArrowRight } from 'lucide-react';
 import { askToolScribe, ToolRecommendation } from '@/lib/ask-toolscribe';
 import FocusTrap from '@/components/FocusTrap';
 import { CATEGORY_SHORT, CATEGORY_COLORS, CATEGORY_BG } from '@/lib/types';
@@ -32,7 +32,7 @@ export default function AskToolScribeModal({ open, onClose }: AskToolScribeModal
       setError(res.error);
       setResults([]);
     } else {
-      setResults(res.recommendations);
+      setResults(res.recommendations ?? []);
     }
     setLoading(false);
   };
@@ -117,7 +117,7 @@ export default function AskToolScribeModal({ open, onClose }: AskToolScribeModal
                     <p className="text-[10px] font-mono text-tv-text-m uppercase tracking-widest">
                       Recommendations ({results.length})
                     </p>
-                    {results.map((r, i) => {
+                    {results.map((r) => {
                       const catColor = CATEGORY_COLORS[r.category as keyof typeof CATEGORY_COLORS] || '#374151';
                       const catBg = CATEGORY_BG[r.category as keyof typeof CATEGORY_BG] || 'rgba(55,65,81,0.08)';
                       return (

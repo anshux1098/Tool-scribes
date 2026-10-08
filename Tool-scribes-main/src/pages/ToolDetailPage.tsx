@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ExternalLink, Star, Copy, Check, FolderPlus, Bookmark, Wrench, Users, Clock, Sparkles, Zap, Globe, Shield, Monitor, MessageSquare, Plus, Send, Loader2, Trash2, Code } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Star, Copy, Check, FolderPlus, Bookmark, Wrench, Clock, Sparkles, Globe, Shield, Monitor, MessageSquare, Plus, Send, Loader2, Trash2, Code } from 'lucide-react';
 import { Tool, Collection, Review, CATEGORY_COLORS, CATEGORY_BG, CATEGORY_LABELS } from '@/lib/types';
 import { generateSummary } from '@/lib/generateSummary';
 import { askToolScribe } from '@/lib/ask-toolscribe';
@@ -81,6 +81,11 @@ export default function ToolDetailPage({
   const [chatError, setChatError] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // Keep the newest chat content in view as answers stream in.
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [chatResponse, chatLoading]);
+
   useEffect(() => {
     if (tool) {
       setNotes(tool.notes || '');
@@ -96,7 +101,7 @@ export default function ToolDetailPage({
     setChatResponse(null);
     const allReviews = [...(reviews || []), ...(myReview ? [myReview] : [])];
     const reviewsSummary = allReviews.length > 0
-      ? allReviews.map(r => `"${r.best_for}" (rating: ${r.rating}/5)`).join('; ')
+      ? allReviews.map(r => `"${r.bestFor}" (rating: ${r.rating}/5)`).join('; ')
       : 'No reviews yet';
     const presentFeatures = features.filter(f => f.present).map(f => f.label);
     const res = await askToolScribe(q, {
@@ -134,7 +139,7 @@ export default function ToolDetailPage({
   const activities: Activity[] = useMemo(() => {
     if (!tool) return [];
     return [
-      { type: 'added', label: 'Added to vault', timestamp: new Date(tool.addedAt) },
+      { type: 'added' as const, label: 'Added to vault', timestamp: new Date(tool.addedAt) },
       ...(Array.isArray(collectionIds) && collectionIds.length > 0
         ? collectionIds.map(() => ({ type: 'collected' as const, label: 'Added to a collection', timestamp: new Date() }))
         : []
@@ -393,11 +398,13 @@ export default function ToolDetailPage({
                 <button
                   onClick={handleAsk}
                   disabled={chatLoading || !chatInput.trim()}
+                  aria-label={chatLoading ? 'Asking…' : 'Ask'}
                   className="p-2 rounded-lg bg-tv-primary text-white disabled:opacity-40 hover:bg-tv-primary-dark transition-colors"
                 >
                   {chatLoading ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
                 </button>
               </div>
+              <div ref={chatEndRef} />
             </div>
           </div>
 

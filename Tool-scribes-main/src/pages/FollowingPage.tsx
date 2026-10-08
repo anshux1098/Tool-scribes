@@ -1,5 +1,4 @@
 import { useNavigate } from 'react-router-dom';
-import { SEO } from '@/components/SEO';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Bookmark, RefreshCw, FolderOpen, ExternalLink, Users, Award, Hash } from 'lucide-react';
 import { useFollowingFeed } from '@/hooks/useFollowingFeed';

@@ -3,11 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   ArrowLeft, Bookmark, Wrench, PenLine, Quote, Settings, MapPin,
-  Globe, Calendar, Users, ExternalLink, Star, MessageCircle,
-  Clock, Eye, Github, Twitter, Linkedin
+  Globe, Calendar, ExternalLink, Eye, Github, Twitter, Linkedin
 } from 'lucide-react';
-import { Tool, Collection, Review, CATEGORY_LABELS, CATEGORY_COLORS, CATEGORY_BG, CATEGORY_SHORT } from '@/lib/types';
-import { supabase, isSupabaseConfigured, ReviewRow } from '@/lib/supabase';
+import { Tool, Collection, Review, CATEGORY_LABELS } from '@/lib/types';
+import { supabase, ReviewRow } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { useCurrentProfile } from '@/hooks/useProfile';
 import { formatDistanceToNow } from 'date-fns';
@@ -15,16 +14,6 @@ import ProfileSettingsModal from '@/components/ProfileSettingsModal';
 import CuratorBadge from '@/components/CuratorBadge';
 import { hashId } from '@/lib/hashId';
 import { SEO } from '@/components/SEO';
-
-function collectionCoverColor(name: string): string {
-  const colors = [
-    '#3A6B52', '#B45309', '#1D4ED8', '#7E22CE', '#2D6A4F',
-    '#92400E', '#374151', '#0F766E', '#A21CAF', '#B91C1C',
-  ];
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
-  return colors[Math.abs(h) % colors.length];
-}
 
 function collectionCoverGradient(name: string): string {
   const colors = [
@@ -105,6 +94,12 @@ export default function MyProfilePage() {
         ogImage: (row.og_image as string) ?? '',
         screenshotUrl: (row.screenshot_url as string) ?? '',
         upvotes: (row.upvotes as number) ?? 0,
+        priceModel: (row.price_model as Tool['priceModel']) ?? 'free',
+        isOpenSource: (row.is_open_source as boolean) ?? false,
+        requiresLogin: (row.requires_login as boolean) ?? false,
+        isFree: (row.is_free as boolean) ?? true,
+        platforms: (row.platforms as string[]) ?? ['web'],
+        signupRequired: (row.signup_required as boolean) ?? false,
         upvotedByMe: false,
         savedToVault: false,
         isFavorite: false,
@@ -124,10 +119,12 @@ export default function MyProfilePage() {
       const reviewRows = (reviewsRes?.data ?? []) as ReviewRow[];
       if (reviewRows.length > 0) {
         const toolIds = [...new Set(reviewRows.map(r => r.tool_id))];
-        supabase
-          .from('tools')
-          .select('id, name, icon')
-          .in('id', toolIds)
+        void Promise.resolve(
+          supabase
+            .from('tools')
+            .select('id, name, icon')
+            .in('id', toolIds)
+        )
           .then(({ data: toolData }) => {
             const toolMap = new Map((toolData ?? []).map(t => [t.id as string, { name: t.name as string, icon: t.icon as string }]));
             const mappedReviews = reviewRows.map(r => {
@@ -143,6 +140,7 @@ export default function MyProfilePage() {
                   bestFor: r.best_for,
                   gotcha: r.gotcha,
                   freeTier: r.free_tier,
+                  rating: r.rating,
                   isMine: true,
                   moderationStatus: r.moderation_status,
                   createdAt: new Date(r.created_at).getTime(),
@@ -168,10 +166,12 @@ export default function MyProfilePage() {
 
   useEffect(() => {
     if (!featuredCollection?._uuid) { setFeaturedToolIcons([]); return; }
-    supabase
-      .from('collection_tools')
-      .select('tools(id, name, icon)')
-      .eq('collection_id', featuredCollection._uuid)
+    void Promise.resolve(
+      supabase
+        .from('collection_tools')
+        .select('tools(id, name, icon)')
+        .eq('collection_id', featuredCollection._uuid)
+    )
       .then(({ data }) => {
         const icons = (data ?? []).map((r: Record<string, unknown>) => {
           const tool = r.tools as { name: string; icon: string } | null;
@@ -215,7 +215,7 @@ export default function MyProfilePage() {
     const catCount = new Map<string, number>();
     for (const t of submittedTools) catCount.set(t.category, (catCount.get(t.category) ?? 0) + 1);
     const top = [...catCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
-    for (const [cat, count] of top) {
+    for (const [cat] of top) {
       const label = CATEGORY_LABELS[cat as keyof typeof CATEGORY_LABELS] || cat;
       statements.push(`Discovers ${label.toLowerCase()} tools`);
     }
@@ -336,7 +336,7 @@ export default function MyProfilePage() {
               </div>
               <p className="text-[12px] font-mono text-tv-text-s flex items-center gap-1.5 mb-6">
                 <Calendar size={12} /> {(() => {
-                  const d = profile.createdAt ? new Date(profile.createdAt) : null;
+                  const d = profile?.createdAt ? new Date(profile.createdAt) : null;
                   if (!d || isNaN(d.getTime()) || d.getTime() < new Date('2020-01-01').getTime()) {
                     return 'Recently joined';
                   }
@@ -439,6 +439,18 @@ export default function MyProfilePage() {
                   <h3 className="font-syne text-[26px] text-tv-text leading-tight mb-3">{featuredCollection.name}</h3>
                   {featuredCollection.description && (
                     <p className="text-[13px] text-tv-text-s leading-relaxed line-clamp-2 mb-5">{featuredCollection.description}</p>
+                  )}
+                  {featuredToolIcons.length > 0 && (
+                    <div className="flex items-center gap-1.5 mb-5" aria-label="Tools in this collection">
+                      {featuredToolIcons.slice(0, 8).map(t => (
+                        <span key={t.name} title={t.name} className="w-7 h-7 rounded-md bg-s2 border border-tv-border flex items-center justify-center text-[13px]">
+                          {t.icon}
+                        </span>
+                      ))}
+                      {featuredToolIcons.length > 8 && (
+                        <span className="text-[11px] font-mono text-tv-text-m">+{featuredToolIcons.length - 8}</span>
+                      )}
+                    </div>
                   )}
                   <button
                     onClick={() => navigate(`/c/${featuredCollection._uuid}`)}
@@ -547,7 +559,7 @@ export default function MyProfilePage() {
                         <Wrench size={11} /> {col.toolCount} tool{col.toolCount !== 1 ? 's' : ''}
                       </span>
                       <span className="flex items-center gap-1">
-                        <Eye size={11} /> {col.views || 0}
+                        <Eye size={11} /> {col.viewCount ?? 0}
                       </span>
                     </div>
                   </div>

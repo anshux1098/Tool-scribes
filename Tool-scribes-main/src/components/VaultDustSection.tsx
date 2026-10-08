@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { ExternalLink, X, Trash2, Clock, EyeOff } from 'lucide-react';
+import { ExternalLink, Trash2, Clock, EyeOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { DustTool } from '@/hooks/useDustCollector';
 import { CATEGORY_SHORT, CATEGORY_COLORS, CATEGORY_BG } from '@/lib/types';

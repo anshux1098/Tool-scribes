@@ -1,10 +1,9 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sparkles } from 'lucide-react';
-import { CATEGORY_COLORS, CATEGORY_BG, CATEGORY_SHORT, CATEGORY_LABELS } from '@/lib/types';
+import { CATEGORY_COLORS, CATEGORY_BG, CATEGORY_LABELS } from '@/lib/types';
 import { buildToolRecs } from '@/lib/recommendations';
 import type { RecItem } from '@/lib/recommendations';
-import { hashId } from '@/lib/hashId';
 
 interface ToolRecommendationsProps {
   toolUuid: string;
@@ -28,8 +27,6 @@ export default function ToolRecommendations({ toolUuid }: ToolRecommendationsPro
   }, [toolUuid]);
 
   if (loading || recs.length === 0) return null;
-
-  const domain = (url: string) => { try { return new URL(url).hostname.replace('www.', ''); } catch { return ''; } };
 
   return (
     <div className="pt-2">

@@ -25,6 +25,15 @@ type ToolRow = {
   id: string; name: string; description: string; category: string; icon: string; favicon: string; url: string;
 };
 
+/** The `tool:tools!inner(...)` embed arrives as a single object, but PostgREST
+ * types it as an array because the FK is not statically declared. */
+type VaultToolRow = { tool_id: string; tool: ToolRow | ToolRow[] };
+
+function oneTool(embed: ToolRow | ToolRow[] | null | undefined): ToolRow | null {
+  if (Array.isArray(embed)) return embed[0] ?? null;
+  return embed ?? null;
+}
+
 export class SimpleSearchEngine implements SearchEngine {
   readonly name = 'simple';
 
@@ -64,7 +73,7 @@ export class SimpleSearchEngine implements SearchEngine {
         if (user) {
           let vaultQuery = supabase
             .from('vault_items')
-            .select('tool_id, tools!inner(id, name, description, category, icon, favicon, url)')
+            .select('tool_id, tool:tools!inner(id, name, description, category, icon, favicon, url)')
             .eq('user_id', user.id);
 
           vaultQuery = vaultQuery.or(orClauseTools);
@@ -72,19 +81,24 @@ export class SimpleSearchEngine implements SearchEngine {
 
           const { data: vaultRows } = await vaultQuery.limit(8);
           if (vaultRows) {
-            results.vault = (vaultRows as Array<{
-              tool_id: string; tools: ToolRow;
-            }>).map(r => ({
-              id: hashId(r.tools.id),
-              _uuid: r.tools.id,
-              name: r.tools.name,
-              description: r.tools.description || '',
-              url: r.tools.url,
-              icon: r.tools.icon,
-              favicon: r.tools.favicon,
-              category: r.tools.category as ToolCategory,
-              scope: 'vault' as const,
-            }));
+            results.vault = (vaultRows as unknown as VaultToolRow[])
+            .map(r => {
+              const t = oneTool(r.tool);
+              return t
+                ? {
+                    id: hashId(t.id),
+                    _uuid: t.id,
+                    name: t.name,
+                    description: t.description || '',
+                    url: t.url,
+                    icon: t.icon,
+                    favicon: t.favicon,
+                    category: t.category as ToolCategory,
+                    scope: 'vault' as const,
+                  }
+                : null;
+            })
+            .filter((r): r is NonNullable<typeof r> => r !== null);
           }
         }
 

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { X, Loader2, Link, ExternalLink, AlertTriangle, CheckCircle, Upload } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ToolCategory, CATEGORY_LABELS, CATEGORY_SHORT, CATEGORY_COLORS, CATEGORY_BG } from '@/lib/types';
-import { fetchAndSuggest, checkDuplicate, submitTool, DuplicateResult, FetchedMetadata } from '@/lib/submission';
+import { fetchAndSuggest, checkDuplicate, submitTool, DuplicateResult } from '@/lib/submission';
 import { captureScreenshot } from '@/lib/screenshot';
 import { supabase } from '@/lib/supabase';
 import FocusTrap from '@/components/FocusTrap';

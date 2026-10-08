@@ -9,7 +9,6 @@ import { useTools } from '@/hooks/useTools';
 import { useAuth } from '@/hooks/useAuth';
 import { useCollections } from '@/hooks/useCollections';
 import { useSearch } from '@/hooks/useSearch';
-import { supabase } from '@/lib/supabase';
 
 export default function CollectionDetailWrapper() {
   const [activeTab, setActiveTab] = useState<'vault' | 'discover'>('vault');

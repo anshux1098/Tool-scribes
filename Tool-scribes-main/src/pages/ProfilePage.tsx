@@ -2,8 +2,8 @@ import { useState, useEffect, useMemo, useRef, ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, MapPin, Globe, Calendar, Bookmark,
-  MessageCircle, ChevronRight, Plus, X, Check, Github, Twitter, Linkedin,
-  Settings, ExternalLink, Wrench, PenLine, Star, Eye, Quote, Heart, Send
+  MessageCircle, ChevronRight, Plus, Check, Github, Twitter, Linkedin,
+  Settings, Wrench, Star, Quote, Heart, Send
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { SEO } from '@/components/SEO';
@@ -290,11 +290,10 @@ export default function ProfilePage() {
         const { data: fTools } = await supabase.from('collection_tools').select('tool_id').eq('collection_id', profile.featuredCollectionId);
         if (!mountedRef.current) return;
         const fIds = (fTools ?? []).map((ct: Record<string, unknown>) => ct.tool_id as string);
-        const fToolInfos = fIds.map(id => {
+        setFeaturedTools(fIds.map(id => {
           const info = toolMap.get(id);
           return { id, name: info?.name || 'Tool', icon: info?.icon || '🔧', favicon: info?.favicon || '', color: toolColor(info?.name || 'Tool') };
-        });
-        setFeaturedTools(fToolInfos);
+        }));
       } else if (mappedCols.length > 0) {
         setFeaturedTools(mappedCols[0].tools);
       }
@@ -314,7 +313,7 @@ export default function ProfilePage() {
       }
 
       setDataLoading(false);
-    }).catch((e) => { if (mountedRef.current) { setDataError('Failed to load profile data.'); setDataLoading(false); } });
+    }).catch(() => { if (mountedRef.current) { setDataError('Failed to load profile data.'); setDataLoading(false); } });
   }, [profileUuid, profile?.featuredCollectionId]);
 
   const featuredCollection = useMemo(() => {
@@ -457,15 +456,6 @@ export default function ProfilePage() {
     reviewed: '#D97706',
   };
 
-  function getActivityIcon(type: string) {
-    switch (type) {
-      case 'added': return <Plus size={15} />;
-      case 'published': return <Bookmark size={15} />;
-      case 'reviewed': return <Star size={15} />;
-      default: return <Check size={15} />;
-    }
-  }
-
   const profileName = profile?.displayName || profile?.username || 'User';
   const profileDesc = profile?.tagline || `${profileName}'s profile on Tool Scribe.`;
 
@@ -475,7 +465,7 @@ export default function ProfilePage() {
         title={profileName}
         description={profileDesc}
         path={`/u/${username}`}
-        image={profile?.avatar_url || undefined}
+        image={profile?.avatarUrl || undefined}
         type="profile"
       />
     <div className="min-h-screen" style={{ backgroundColor: '#F0EDE6' }}>
@@ -784,6 +774,23 @@ export default function ProfilePage() {
                     {featuredCollection.description}
                   </p>
                 )}
+                {featuredTools.length > 0 && (
+                  <div className="flex items-center gap-1.5 mb-4" aria-label="Tools in this collection">
+                    {featuredTools.slice(0, 8).map(t => (
+                      <span
+                        key={t.id}
+                        title={t.name}
+                        className="w-7 h-7 rounded-md flex items-center justify-center text-[13px] border"
+                        style={{ backgroundColor: '#F0EDE6', borderColor: '#E5E0D6' }}
+                      >
+                        {t.icon}
+                      </span>
+                    ))}
+                    {featuredTools.length > 8 && (
+                      <span className="text-[11px]" style={{ color: '#6b6b6b' }}>+{featuredTools.length - 8}</span>
+                    )}
+                  </div>
+                )}
                 <div className="flex items-center gap-4 mb-4">
                   <div className="flex items-center gap-1.5">
                     <Wrench size={13} style={{ color: '#6b6b6b' }} />
@@ -869,7 +876,7 @@ export default function ProfilePage() {
               </button>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {visibleCollections.map((col, i) => (
+              {visibleCollections.map((col) => (
                 <div
                   key={col.id}
                   onClick={() => navigate(`/c/${col.id}`)}
@@ -936,7 +943,7 @@ export default function ProfilePage() {
               </p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {visibleReviews.slice(0, 3).map((review, i) => (
+              {visibleReviews.slice(0, 3).map((review) => (
                 <div
                   key={review.id}
                   onClick={() => navigate(`/tool/${hashId(review.toolId)}`)}
@@ -1019,7 +1026,7 @@ export default function ProfilePage() {
               Recent Activity
             </p>
             <div className="max-w-2xl space-y-2.5">
-              {activity.slice(0, 6).map((item, i) => {
+              {activity.slice(0, 6).map((item) => {
                 const iconMap: Record<string, { icon: React.ReactNode; label: string }> = {
                   added: { icon: <Plus size={14} />, label: 'Added tool' },
                   published: { icon: <Bookmark size={14} />, label: 'Published collection' },
@@ -1028,7 +1035,7 @@ export default function ProfilePage() {
                 const info = iconMap[item.type] || { icon: <Check size={14} />, label: 'Action' };
                 return (
                   <div
-                    key={i}
+                    key={item.type + item.time.toISOString() + item.text}
                     className="flex items-center gap-3.5 px-4 py-3 rounded-lg shadow-sm transition-all hover:shadow-md"
                     style={{ backgroundColor: '#FFFFFF', border: '1px solid #E5E0D6' }}
                   >
