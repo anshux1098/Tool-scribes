@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { checkRateLimit } from "./_shared/rate-limit.ts";
-import { askToolScribe } from "./_shared/ai-provider.ts";
+import { checkRateLimit } from "../_shared/rate-limit.ts";
+import { askToolScribe } from "../_shared/ai-provider.ts";
 
 interface ToolRow {
   id: string;
