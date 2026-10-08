@@ -17,10 +17,10 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const json = (data: unknown, status = 200) =>
+const json = (data: unknown, status = 200, extraHeaders: Record<string, string> = {}) =>
   new Response(JSON.stringify(data), {
     status,
-    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+    headers: { ...CORS_HEADERS, ...extraHeaders, "Content-Type": "application/json" },
   });
 
 /** Block internal/private addresses and non-HTTP(S) schemes. */
@@ -59,10 +59,18 @@ Deno.serve(async (req: Request) => {
   const caller = await authenticate(req);
   if (!caller) return json({ success: false, message: "Authentication required" }, 401);
 
-  const clientIp = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown";
-  const rate = checkRateLimit(clientIp);
+  // Keyed on the authenticated user id, not on an IP header the client
+  // controls.
+  const rate = await checkRateLimit("generate-ai-profile", caller.userId);
   if (!rate.allowed) {
-    return json({ success: false, message: "Too many requests. Please try again later." }, 429);
+    return json(
+      {
+        success: false,
+        message: `Too many requests. Try again in ${rate.retryAfter ?? 60}s.`,
+      },
+      429,
+      { "Retry-After": String(rate.retryAfter ?? 60) },
+    );
   }
 
   let body: RequestBody;
