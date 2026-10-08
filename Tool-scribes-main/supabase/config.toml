@@ -1,0 +1,39 @@
+# Supabase CLI configuration for Tool-scribes
+#
+# This file previously did not exist, which meant there was no place to
+# declare function settings and nothing to stop a deploy from disabling JWT
+# verification at the last minute. It is now tracked here deliberately.
+
+project_id = "qglvwvpsegrucrhcpzxd"
+
+[api]
+# The browser client uses the publishable key and user sessions only. No
+# extra configuration required.
+enabled = true
+
+[db]
+major_version = 17
+
+[studio]
+enabled = true
+port = 54323
+
+# ─── Edge functions ─────────────────────────────────────────────────────
+[functions.ask-toolscribe]
+# JWT verification is ON. Both functions also verify the caller themselves
+# in _shared/auth.ts — the gateway check is defence in depth, not the
+# primary control. Never pass --no-verify-jwt to the deploy command; both
+# functions perform a service-role database write.
+verify_jwt = true
+
+[functions.generate-ai-profile]
+verify_jwt = true
+
+[auth]
+# Matches the publishable-key client flow used throughout src/lib/supabase.ts.
+site_url = "https://tool-scribe.vercel.app"
+additional_redirect_urls = ["https://tool-scribe.vercel.app/auth/callback", "http://localhost:5173/auth/callback"]
+
+# Large enough for the avatar and banner uploads in useStorageUpload.
+[storage]
+file_size_limit = "10MiB"
