@@ -51,3 +51,18 @@ Pending schema: `tagline`, `location`, `website`, `github`, `twitter`, `linkedin
 ### Routes
 - `/profile` → `MyProfilePage` (own profile, old design tokens, Supabase-backed)
 - `/u/:username` → `ProfilePage` (public profile, new design tokens, Supabase-backed)
+
+### Database source of truth (IMPORTANT)
+The live Supabase database (project `qglvwvpsegrucrhcpzxd`) is the single source
+of truth for the schema. The hand-written `supabase-schema.sql` that used to sit
+at the repo root was badly stale and has been **removed** — see
+`docs/legacy-sql-archive/README.md` for why. Read `supabase/README.md` before
+touching the database.
+
+- `supabase/schema_structure.sql` and `supabase/functions.sql` are **generated**
+  snapshots — never hand-edit them.
+- `supabase/migrations/` contains only migrations genuinely applied to
+  production, named with their exact remote version. Adding a file there without
+  applying it makes `supabase db push` replay it.
+- `supabase/MIGRATION_HISTORY.md` is the authoritative applied-history list.
+- Known open schema/security issues are listed in `supabase/README.md`.

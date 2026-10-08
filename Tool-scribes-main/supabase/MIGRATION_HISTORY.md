@@ -1,0 +1,81 @@
+# Supabase migration history — applied to production
+
+Project ref: `qglvwvpsegrucrhcpzxd` ("Pass")
+
+This is the complete list of migrations **actually applied** to the production
+database, as reported by `supabase migration list --linked` on 2026-09-18.
+
+## Why this file exists
+
+The repository's `supabase/migrations/` folder previously held 7 files whose
+version numbers did not appear in this history, and whose content did not match
+the live schema. They have been moved to `docs/legacy-sql-archive/` and must not
+be applied. See the archive README for the per-file reasons.
+
+Migrations 1–48 were applied through the Supabase dashboard / Management API
+and were never present as files in this repository. Migrations 49 onward are
+mirrored as files in `supabase/migrations/`.
+
+| # | Version | Name | In repo |
+|---:|---|---|:--:|
+| 1 | 20260610141249 | add_tool_submissions_and_user_roles | — |
+| 2 | 20260610141258 | add_matched_tool_column | — |
+| 3 | 20260610141639 | get_submitter_email_function | — |
+| 4 | 20260610141645 | get_pending_submissions_for_admin | — |
+| 5 | 20260610141706 | fix_get_submissions_for_review | — |
+| 6 | 20260610142624 | add_health_tags_reviews_follows_reputation | — |
+| 7 | 20260610142631 | add_tool_tags_table | — |
+| 8 | 20260610142753 | add_vault_items_with_visit_count | — |
+| 9 | 20260611121238 | add_tool_health_system | — |
+| 10 | 20260611122400 | create_profiles_and_follows | — |
+| 11 | 20260611123715 | create_reviews_simple | — |
+| 12 | 20260611123720 | reviews_rls_policies | — |
+| 13 | 20260611124228 | reputation_scoring_function | — |
+| 14 | 20260611125207 | tag_tables_no_rls | — |
+| 15 | 20260611125226 | rebuild_tag_tables | — |
+| 16 | 20260611125230 | tag_table_constraints2 | — |
+| 17 | 20260611131411 | create_missing_core_tables | — |
+| 18 | 20260611131421 | add_missing_functions_and_rls_fixes | — |
+| 19 | 20260611133150 | admin_flow_fixes_v2 | — |
+| 20 | 20260611134226 | fix_critical_security_issues | — |
+| 21 | 20260611143612 | approve_submission_transaction | — |
+| 22 | 20260611155409 | fix_get_submissions_for_review_return_type | — |
+| 23 | 20260611160623 | fix_get_submissions_for_review_column_type_mismatch | — |
+| 24 | 20260611162356 | add_screenshot_url_to_tools_and_submissions | — |
+| 25 | 20260611162449 | update_get_submissions_for_review_with_screenshot_url | — |
+| 26 | 20260611162550 | update_approve_submission_with_screenshot_url | — |
+| 27 | 20260611181939 | fix_calculate_reputation_use_follows | — |
+| 28 | 20260611205939 | add_profile_columns | — |
+| 29 | 20260611210815 | enable_rls_and_policies_tags | — |
+| 30 | 20260611211837 | add_profile_identity_and_shelf | — |
+| 31 | 20260612151613 | add_contact_url_to_profiles | — |
+| 32 | 20260612154534 | add_review_ratings | — |
+| 33 | 20260612160943 | collection_discovery_columns | — |
+| 34 | 20260612162157 | notification_center | — |
+| 35 | 20260612163255 | add_recommendation_rpcs | — |
+| 36 | 20260613060613 | add_tool_alternatives | — |
+| 37 | 20260613062006 | fix_launch_security | — |
+| 38 | 20260613085404 | create_storage_buckets | — |
+| 39 | 20260613085422 | create_delete_my_account_rpc | — |
+| 40 | 20260614143653 | add_tool_alternatives_delete_policy | — |
+| 41 | 20260614162528 | fix_increment_upvote_ambiguous_column | — |
+| 42 | 20260615073008 | add_tool_feature_columns | — |
+| 43 | 20260615073248 | add_submission_feature_columns | — |
+| 44 | 20260615073446 | fix_approve_submission_rpc_features | — |
+| 45 | 20260615095114 | create_screenshots_bucket | — |
+| 46 | 20260615110242 | fix_clone_collection_carry_cover | — |
+| 47 | 20260616131511 | 20260616000002_add_ai_profile_metadata | — |
+| 48 | 20260616210027 | 20260617000001_convert_ai_profile_version_to_integer | — |
+| 49 | 20260918071459 | fix_approve_submission_vault_autosave | ✅ |
+| 50 | 20260918072914 | harden_notification_rpc_authz | ✅ |
+| 51 | 20260918072915 | guard_approve_submission_pending_only | ✅ |
+
+## Going forward
+
+Every schema change must be:
+1. applied as a migration (via the MCP tool or CLI), which records a version above, then
+2. saved as `supabase/migrations/<version>_<name>.sql` in this repository, and
+3. reflected by regenerating `supabase/schema_structure.sql` and `supabase/functions.sql`.
+
+Never hand-edit the generated files. Never apply SQL to production without a
+matching file in `supabase/migrations/`.
