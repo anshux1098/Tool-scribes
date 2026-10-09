@@ -56,3 +56,16 @@ is a simpler alternative.
   `useReviews.ts` but never called — review notifications do not fire.
 - Legacy tables `users`, `vaults`, `device_requests`, `curator_follows`,
   `reputation_scores` are unused by application code.
+
+## Fixed since this file was written
+
+- Review self-moderation — `reviews` moderation columns are now revoked from
+  `authenticated` and set only through the `moderate_review()` RPC, which
+  derives `moderated_by` from the session. Previously the `reviews: self
+  update` policy validated `user_id` rather than the columns written, so a
+  review author could PATCH their own `moderation_status` back to `active`.
+  Migration `20261008130000`.
+- Allowed `moderation_status` values are `active | hidden | removed`
+  (`reviews_moderation_status_check`), not `rejected`.
+- `reviews.tool_id` **does** have `REFERENCES tools(id) ON DELETE CASCADE` —
+  the original audit's claim that it lacked a FK was wrong.

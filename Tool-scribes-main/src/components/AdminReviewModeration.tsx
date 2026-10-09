@@ -18,6 +18,8 @@ export default function AdminReviewModeration() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => { if (!isAdmin) { setLoading(false); } }, [isAdmin]);
 
@@ -82,13 +84,24 @@ export default function AdminReviewModeration() {
 
   useEffect(() => { loadReviews(); }, [user]);
 
-  const moderate = async (reviewId: string, status: string) => {
-    await supabase
-      .from('reviews')
-      .update({ moderation_status: status, moderated_at: new Date().toISOString(), moderated_by: user?.id })
-      .eq('id', reviewId);
-    setNextCursor(null);
-    await loadReviews();
+  // Moderation goes through the moderate_review() RPC, not a direct UPDATE.
+  // The moderation columns are revoked from the authenticated role, and the
+  // RPC derives moderated_by from the session instead of trusting the
+  // client -- which previously let any review author un-hide their own.
+  const moderate = async (reviewId: string, status: 'active' | 'hidden' | 'removed') => {
+    setBusyId(reviewId);
+    setActionError(null);
+    try {
+      const { error } = await supabase.rpc('moderate_review', {
+        p_review_id: reviewId,
+        p_status: status,
+      });
+      if (error) { setActionError(error.message); return; }
+      setNextCursor(null);
+      await loadReviews();
+    } finally {
+      setBusyId(null);
+    }
   };
 
   const filtered = filter === 'all' ? reviews : reviews.filter(r => r.review.moderation_status === filter);
@@ -127,6 +140,11 @@ export default function AdminReviewModeration() {
       </div>
 
       {/* Filter tabs */}
+      {actionError && (
+        <p role="alert" className="mb-4 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-[12px] font-mono text-red-700">
+          {actionError}
+        </p>
+      )}
       <div className="flex items-center gap-1 mb-6">
         {['all', 'active', 'flagged', 'hidden', 'removed'].map(f => (
           <button
@@ -181,22 +199,28 @@ export default function AdminReviewModeration() {
               }`}>
                 {item.review.is_flagged ? 'FLAGGED' : item.review.moderation_status.toUpperCase()}
               </span>
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                 {item.review.moderation_status !== 'active' && (
                   <button onClick={() => moderate(item.review.id, 'active')}
-                    className="p-1 rounded hover:bg-green-100 text-tv-text-s hover:text-green-600 transition-colors" title="Approve">
+                    disabled={busyId === item.review.id}
+                    aria-label={`Approve review by ${item.authorName}`}
+                    className="p-1 rounded hover:bg-green-100 text-tv-text-s hover:text-green-600 transition-colors disabled:opacity-40" title="Approve">
                     <CheckCircle size={13} />
                   </button>
                 )}
                 {item.review.moderation_status !== 'hidden' && (
                   <button onClick={() => moderate(item.review.id, 'hidden')}
-                    className="p-1 rounded hover:bg-amber-100 text-tv-text-s hover:text-amber-600 transition-colors" title="Hide">
+                    disabled={busyId === item.review.id}
+                    aria-label={`Hide review by ${item.authorName}`}
+                    className="p-1 rounded hover:bg-amber-100 text-tv-text-s hover:text-amber-600 transition-colors disabled:opacity-40" title="Hide">
                     <EyeOff size={13} />
                   </button>
                 )}
                 {item.review.moderation_status !== 'removed' && (
                   <button onClick={() => moderate(item.review.id, 'removed')}
-                    className="p-1 rounded hover:bg-red-100 text-tv-text-s hover:text-red-600 transition-colors" title="Remove">
+                    disabled={busyId === item.review.id}
+                    aria-label={`Remove review by ${item.authorName}`}
+                    className="p-1 rounded hover:bg-red-100 text-tv-text-s hover:text-red-600 transition-colors disabled:opacity-40" title="Remove">
                     <Trash2 size={13} />
                   </button>
                 )}

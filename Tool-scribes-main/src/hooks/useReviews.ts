@@ -109,17 +109,19 @@ export function useReviews(toolUuid?: string) {
     } catch (e) { console.error('[useReviews] deleteReview failed:', e); return false; }
   }, [user, fetchReviews]);
 
-  const moderateReview = useCallback(async (reviewUuid: string, status: string): Promise<boolean> => {
+  /**
+   * Moderation goes through the moderate_review() RPC. The columns are
+   * revoked from the authenticated role, so a direct .update() now fails --
+   * and it would have been exploitable even before the revoke, because the
+   * RLS policy validated user_id rather than which columns were written.
+   */
+  const moderateReview = useCallback(async (reviewUuid: string, status: 'active' | 'hidden' | 'removed'): Promise<boolean> => {
     if (!user) return false;
     try {
-      const { error } = await supabase
-        .from('reviews')
-        .update({
-          moderation_status: status,
-          moderated_at: new Date().toISOString(),
-          moderated_by: user.id,
-        })
-        .eq('id', reviewUuid);
+      const { error } = await supabase.rpc('moderate_review', {
+        p_review_id: reviewUuid,
+        p_status: status,
+      });
       if (error) return false;
       await fetchReviews();
       return true;
