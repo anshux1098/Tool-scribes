@@ -1,11 +1,44 @@
-# opencode.json references ~/.secrets/supabase-pat via {file:...}; it is
-# machine-specific and must never be committed. opencode.jsonc also exists so
-# the working copy stays valid JSONC on machines that add comments.
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies and build output
+node_modules
+dist
+dist-ssr
+*.tsbuildinfo
+
+# Secrets. .env holds real Supabase credentials and must never be committed.
+.env
+.env.local
+*.local
+
+# Supabase CLI link state. Exposes the project ref, org slug and the AWS
+# pooler hostname, and is machine-specific -- see supabase/README.md.
+supabase/.temp/
+
+# opencode.json references ~/.secrets/supabase-pat via {file:...}, so it is
+# machine-specific. .jsonc is ignored too so a machine that adds comments
+# cannot accidentally commit the same secret by reference.
 opencode.json
 opencode.jsonc
 
-# Supabase CLI link state, at either repo root. Exposes the project ref, org
-# slug and AWS pooler hostname. Tool-scribes-main/supabase/.gitignore covers
-# the nested copy; this catches a stray one created by running the CLI from
-# the outer directory.
-supabase/.temp/
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# NOTE: .env.example used to be ignored here, which meant the onboarding
+# template src/main.tsx points users to was never committed. It is tracked
+# again -- keep it that way, it holds no real credentials.

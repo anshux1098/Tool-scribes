@@ -42,7 +42,7 @@ accurate as written, including line numbers.
 Prefer to fix in the order given by [Suggested fix order](#suggested-fix-order).
 
 **Ground rules that keep this repo coherent:**
-- `AGENTS.md` (in `Tool-scribes-main/`) holds project context and DB conventions — read it too.
+- `AGENTS.md` (repo root) holds project context and DB conventions — read it too.
 - The live Supabase DB (`supabase/schema_structure.sql`, `supabase/functions.sql`) is
   the schema source of truth. Those two files are **generated snapshots — never hand-edit.**
 - `supabase/migrations/` contains only migrations genuinely applied to production.
