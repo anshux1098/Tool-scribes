@@ -6,7 +6,8 @@
 > `CODE_REVIEW.md` is the original audit (complete, with file:line references).
 > This file is the running log of what has been fixed since.
 >
-> **Last updated:** end of session covering critical #1, #2, #3, #4, #16.
+> **Last updated:** session that applied critical #5 to production and fixed a
+> no-op in its own migration.
 
 ---
 
@@ -14,11 +15,15 @@
 
 | | |
 |---|---|
-| Critical findings | **24 total → 5 fixed** (#1, #2, #3, #4, #16) |
-| Commits ahead of `origin/main` | **7** (not yet pushed at time of writing) |
+| Critical findings | **24 total → 6 fixed** (#1, #2, #3, #4, #5, #16) |
+| Migrations applied to production | **3** (`20261009135041`, `20261009135051`, `20261009135209`) |
 | TypeScript errors | **126 → 0** (`tsc -b` exits 0) |
-| **Blocking issue** | **Migration `20261008120000` is NOT applied to production** |
-| Next up | **#5** `reviews.moderation_status` self-moderation |
+| **Blocking issue** | **None.** `moderate_review()` and the rate limiter now exist in production |
+| Next up | **#6** tool author can rewrite `upvotes` |
+
+The earlier "BLOCKED — migration not applied" section below is **resolved**;
+see the #5 entry. Read that entry before touching `reviews` again: the first
+migration's column-level `REVOKE` was a no-op and needed a follow-up fix.
 
 ---
 
@@ -147,86 +152,112 @@ anonymous public endpoints reachable cross-origin from any website. No
 **Verified:** `bash -n` clean, PowerShell parser clean, guard tested both ways,
 `npm run typecheck` exits 0.
 
+### CRITICAL #5 — Review self-moderation ✅ `9dbf3ac` + `20261009135209`
+
+RLS validated **rows, not columns**. `reviews: self update` re-checks
+`user_id` only, so an author could PATCH `moderation_status` back to `'active'`
+on their own hidden/removed review and it became publicly readable again.
+
+Migration `20261009135051` added `moderate_review()` — `SECURITY DEFINER`,
+checks `is_moderator()`, derives `moderated_by` from `auth.uid()` — and both
+client write sites now call it.
+
+**But the column revokes in that migration did nothing.** Postgres column
+privileges are *additive* with table privileges: a role holding table-level
+`GRANT UPDATE` is treated as having UPDATE on every column, and a column-level
+`REVOKE` cannot subtract from it. `reviews` had a table-level `GRANT UPDATE` to
+both `anon` and `authenticated`, so immediately after applying it:
+
+```sql
+has_column_privilege('authenticated','reviews','moderation_status','UPDATE')
+=> true      -- expected false
+```
+
+The hole was still fully open. Migration `20261009135209` revokes the
+**table-level** grant first, then re-grants UPDATE per column for exactly the
+five content columns `MyReviewsPage.tsx:100-108` writes:
+`best_for, gotcha, free_tier, rating, updated_at`.
+
+**Verified in production after the fix:**
+
+| Column | `authenticated` | `anon` |
+|---|:--:|:--:|
+| `best_for`, `gotcha`, `free_tier`, `rating`, `updated_at` | ✅ | ❌ |
+| `moderation_status`, `moderated_by`, `moderated_at`, `is_flagged`, `flagged_reason` | ❌ | ❌ |
+| `id`, `user_id`, `tool_id`, `created_at` | ❌ | ❌ |
+
+> **Carry this forward:** a column-level `REVOKE` is a no-op if any table-level
+> `GRANT UPDATE` survives. Always check `information_schema.role_table_grants`
+> first, and verify with `has_column_privilege` rather than trusting the DDL.
+
 ---
 
-## ⚠️ BLOCKED — read this before deploying
+## ✅ RESOLVED — was blocking
 
-### Migration `20261008120000` is NOT applied
+### Migrations applied to production
 
-**File:** `supabase/migrations/20261008120000_add_rate_limit_counters.sql`
+The Supabase MCP connection is now authenticated with a **scoped personal
+access token** (Database + Migrations read-write) rather than OAuth. The OAuth
+grant issued by the MCP server is read-only and cannot be widened — its stored
+token had no scopes at all, which is why `execute_sql` returned 403 "after
+trying upscoping".
 
-The Supabase MCP connection in `opencode.json` is configured `read_only=true`,
-so the production database cannot be written from this environment.
+Config lives in `opencode.json` (git-ignored), reading the token from
+`~/.secrets/supabase-pat` via opencode's `{file:...}` substitution.
 
-**Consequence:** there is currently **no rate limiting in production**. The
-functions call `check_rate_limit()`, which doesn't exist, fail open, and log.
+| Version | Name | What |
+|---|---|---|
+| `20261009135041` | `add_rate_limit_counters` | rate-limit counters table + `check_rate_limit()` + `prune_rate_limit_counters()`, all `service_role`-only |
+| `20261009135051` | `stop_review_self_moderation` | `moderate_review()` RPC + column comments (column revokes inert — see #5) |
+| `20261009135209` | `enforce_reviews_column_revocations` | revokes the table-level `GRANT UPDATE` that defeated #5 |
 
-**To apply:**
-```bash
-supabase db push
-```
-or paste the migration file into the Supabase SQL editor.
+Migration filenames were renamed to their **actual remote versions** —
+`apply_migration` assigns its own timestamps, and a filename that disagrees with
+`schema_migrations` makes `supabase db push` replay it.
 
-The deploy scripts now do this automatically and abort if the push fails.
-
-**This blocks #5, #6/#7, #8, #9, #10 — every remaining critical finding needs a
-migration.** Removing `read_only` from `opencode.json` would unblock the rest of
-the security work.
+**Verified:** `list_migrations` shows all three; `has_function_privilege`
+confirms all three functions are `SECURITY DEFINER` and executable by
+`service_role` only (absent from both the anon and authenticated advisor
+lists); the rate limiter admits calls 1–2 and denies 3–4 with `retry_after=60`
+at `limit=2`.
 
 ### Commits not pushed
 
-7 commits sit ahead of `origin/main`. Scanned for API keys, tokens and JWTs —
-clean, no new secrets introduced. Note `supabase/.temp/` is still tracked
-(finding #17, pre-existing, see below).
+2 commits sit ahead of `origin/main`. Scanned for API keys, tokens and JWTs —
+clean. `supabase/.temp/` is still tracked (finding #17).
 
 ---
 
-## 📋 Next up — CRITICAL #5
+## 📋 Next up — CRITICAL #6
 
-### #5 — Any user can un-hide their own moderated review
+### #6 — Tool author can rewrite `upvotes`
 
-**File:** `src/hooks/useReviews.ts:113-128`
-**DB:** `supabase/schema_structure.sql:615, :618`
+`useTools.ts:307-324` (`updateScreenshot`, `updateAiProfile`) calls
+`.from('tools').update(...)` straight from the browser, and
+`tools: owner update USING (added_by = auth.uid())` has no column restriction.
+The **tool author** — not just an admin — can PATCH any column on their own row
+including `upvotes`, `price_model`, and `added_by`, defeating the counter
+`increment_upvote` protects. Neither function checks the response `error`.
 
-`moderateReview` PATCHes `reviews.moderation_status` straight from the browser.
-The RLS policy is:
-
-```sql
-reviews: self update ... USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid())
-```
-
-`WITH CHECK` validates **only** `user_id`, not `moderation_status`. Reads allow
-`moderation_status = 'active'`. So a user whose review was `rejected` writes
-`moderation_status='active'` and it becomes publicly readable again. **Self-
-moderation bypass.**
-
-**Fix (preferred — do this):**
-```sql
-REVOKE UPDATE (moderation_status, moderated_by, moderated_at) ON reviews FROM authenticated;
-```
-then move `moderateReview` into a `SECURITY DEFINER` RPC that checks
-`is_moderator()` and sets `moderated_by = auth.uid()` server-side. This also
-fixes finding #12 (`moderateTag` returns inverted success, `moderated_by` is
-caller-asserted).
-
-**Also note:** `moderateReview` currently has **zero call sites** — it's the only
-writer of `moderated_by`/`moderated_at`, so `AdminReviewModeration.tsx` reads a
-column nothing populates through this path. And `notifyNewReview` is imported in
-`useReviews.ts:5` but never called, so **review notifications never fire**.
-
-**Invariant to apply throughout the DB work:** *a client may only ever write
-columns that describe content — never columns that describe trust* (counters,
-status, identity).
+**Apply the #5 lesson here:** check for a table-level `GRANT UPDATE` on `tools`
+before attempting a column revoke, and verify with `has_column_privilege`.
 
 ### Then, in order
 
 | # | Finding | Needs migration | Notes |
 |---|---|:--:|---|
-| 6 | Tool author can rewrite `upvotes` | ✅ | `useTools.ts:307-324`; `tools: owner update USING (added_by = auth.uid())` has no column restriction |
 | 7 | `increment_upvote` allows decrementing | ✅ | `functions.sql:534-550` guards only `delta = 1`; `useTools.ts:224` deletes the row *before* calling with `-1`. Needs an atomic `toggle_upvote(tool_id)` deriving the count from `count(*)` |
 | 8 | `clone_public_collection` writes into arbitrary accounts | ✅ | `functions.sql:114-141`; drop the `target_user_id` param, hardcode `auth.uid()` |
 | 9 | `reputation_score` self-assignable | ✅ | `useProfile.ts:157-167` types update as `Record<string, unknown>`; narrow to a `ProfileUpdate` type + revoke the column |
 | 10 | Email enumeration | ✅ | `get_creator_email` / `get_submitter_email` (`functions.sql:284, :390`) — `SECURITY DEFINER`, no authz, no `REVOKE FROM anon` |
+
+Findings #8/#9/#10 are all confirmed still open by the Supabase security
+advisor: `clone_public_collection`, `get_creator_email`, and
+`get_submitter_email` all still appear as callable by `anon`.
+
+**Invariant to apply throughout the DB work:** *a client may only ever write
+columns that describe content — never columns that describe trust* (counters,
+status, identity).
 
 ### Cheap wins still open (no migration needed)
 
@@ -256,6 +287,12 @@ status, identity).
 
 - **Do not** re-audit `src/`. `CODE_REVIEW.md` is complete and accurate.
 - **Verify** a finding still exists before fixing it — code has moved.
+- **Verify a migration actually did something.** `has_column_privilege` /
+  `has_function_privilege`, not "the DDL ran without error". Migration
+  `20261009135051` applied cleanly and changed nothing; a column-level `REVOKE`
+  is silently overridden by any surviving table-level `GRANT UPDATE`.
+- `apply_migration` assigns its **own** version timestamps. Rename the file to
+  match, or `supabase db push` will replay it.
 - `AGENTS.md` holds project conventions — read it too.
 - `supabase/schema_structure.sql` and `supabase/functions.sql` are **generated**.
   Never hand-edit. Regenerate after any schema change.
@@ -266,6 +303,27 @@ status, identity).
   this review and should be updated as they get fixed.
 - Verification commands: `npm run typecheck`, `npm test`, `npm run build`,
   `deno check index.ts` (from each `supabase/functions/<name>/` dir).
+
+---
+
+## 🔐 Access setup (for a new session)
+
+The Supabase MCP connection authenticates with a **scoped personal access
+token**, not OAuth. This is deliberate: the MCP server's own OAuth flow issues
+a read-only grant whose token carries no scopes, so `execute_sql` fails 403
+"after trying upscoping" no matter what `read_only` is set to in the URL.
+
+- `opencode.json` (repo root, git-ignored) sets `oauth: false` and an
+  `Authorization: Bearer {file:~/.secrets/supabase-pat}` header.
+- The token needs **Database: read-write** and **Migrations: read-write**,
+  scoped to this one project. Create one at
+  [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens).
+- Verify before applying anything: `select current_user` must not return
+  `supabase_read_only_user`.
+
+> Supabase's own guidance is not to connect MCP to production, and this project
+> is production. A project-scoped token with only Database + Migrations is the
+> mitigation — not full account access.
 
 ---
 

@@ -28,7 +28,17 @@
 --   are managed by Supabase. To recreate an environment locally you would need
 --   `supabase db pull` (see README) rather than running this file.
 --
--- Captured: 2026-09-18, 26 tables, 81 RLS policies, 39 indexes, 3 triggers.
+-- Captured: 2026-10-09, 27 tables, 81 RLS policies, 3 triggers.
+--   (indexes: the live count is 87, but this snapshot lists only the 40
+--    hand-curated ones below — the live figure also counts indexes on
+--    storage/tables this file does not enumerate. Unchanged by the
+--    2026-10-09 migrations, which added exactly one index.)
+--
+-- 2026-10-09 additions (migrations 20261009135041 / 20261009135051 /
+-- 20261009135209):
+--   + public.rate_limit_counters table, its index, RLS enabled (no policies —
+--     reached only through check_rate_limit(), which is service_role-only)
+--   + SECTION 9: column-level grants on public.reviews
 -- ============================================================================
 
 -- ─── SECTION 1: CUSTOM TYPES ────────────────────────────────────────────────
@@ -192,6 +202,16 @@ CREATE TABLE public.reviews (
   moderated_at timestamp with time zone,
   moderated_by uuid,
   rating integer NOT NULL DEFAULT 4
+);
+
+-- Column grants are NOT part of CREATE TABLE, so they are recorded in
+-- SECTION 9 below. The UPDATE grant on this table is column-scoped, not
+-- table-scoped — see SECTION 9 and migration 20261009135209.
+
+CREATE TABLE public.rate_limit_counters (
+  key text NOT NULL,
+  count integer NOT NULL DEFAULT 0,
+  window_started_at timestamp with time zone NOT NULL DEFAULT now()
 );
 
 CREATE TABLE public.tag_subscriptions (
@@ -519,6 +539,7 @@ CREATE INDEX vault_user_idx ON public.vault_items USING btree (user_id);
 CREATE UNIQUE INDEX tool_tags_uniq ON public.tool_tags USING btree (tool_id, tag_id);
 CREATE UNIQUE INDEX ts_uniq ON public.tag_subscriptions USING btree (user_id, tag_id);
 CREATE UNIQUE INDEX profiles_username_idx ON public.profiles USING btree (username) WHERE (username IS NOT NULL);
+CREATE INDEX rate_limit_counters_window_idx ON public.rate_limit_counters USING btree (window_started_at);
 
 -- ─── SECTION 5: ROW LEVEL SECURITY ──────────────────────────────────────────
 
@@ -538,6 +559,7 @@ ALTER TABLE public.reputation_scores ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tag_subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tags ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rate_limit_counters ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tool_alternatives ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tool_health ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tool_submissions ENABLE ROW LEVEL SECURITY;
@@ -680,6 +702,30 @@ CREATE TRIGGER recalc_rep_review AFTER INSERT OR DELETE OR UPDATE ON public.revi
 -- collection-covers true    null        null
 -- screenshots       true    5242880     image/png, image/jpeg, image/webp
 
+-- ─── SECTION 9: COLUMN-LEVEL GRANTS (security-relevant) ─────────────────────
+--
+-- Only grants that are NOT inferable from CREATE TABLE are recorded here.
+-- Postgres column privileges are ADDITIVE with table privileges: a role
+-- holding table-level GRANT UPDATE holds UPDATE on every column, and a
+-- column-level REVOKE cannot subtract from it. That is why migration
+-- 20261009135051's column revokes had no effect until 20261009135209 removed
+-- the table-level grant first.
+--
+-- public.reviews — migration 20261009135209
+--   REVOKE UPDATE ON public.reviews FROM anon, authenticated;  (table level)
+--   GRANT UPDATE (best_for, gotcha, free_tier, rating, updated_at)
+--     ON public.reviews TO authenticated;
+--
+--   Authors can edit review content. They cannot touch moderation_status,
+--   moderated_by, moderated_at, is_flagged or flagged_reason — those are
+--   server-owned, written only by moderate_review() (SECURITY DEFINER, which
+--   checks is_moderator() and derives moderated_by from auth.uid()).
+--   anon has no UPDATE on this table at all; its INSERT and DELETE are
+--   unchanged.
+--
+--   Verified with has_column_privilege: exactly those 5 columns true for
+--   authenticated, all others false for both authenticated and anon.
+
 -- ─── END OF GENERATED SNAPSHOT ──────────────────────────────────────────────
--- Routine definitions (24 functions) are in the sibling file ./functions.sql
+-- Routine definitions (27 functions) are in the sibling file ./functions.sql
 -- ────────────────────────────────────────────────────────────────────────────

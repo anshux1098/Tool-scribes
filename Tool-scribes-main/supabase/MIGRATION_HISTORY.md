@@ -69,6 +69,30 @@ mirrored as files in `supabase/migrations/`.
 | 49 | 20260918071459 | fix_approve_submission_vault_autosave | ✅ |
 | 50 | 20260918072914 | harden_notification_rpc_authz | ✅ |
 | 51 | 20260918072915 | guard_approve_submission_pending_only | ✅ |
+| 52 | 20261009135041 | add_rate_limit_counters | ✅ |
+| 53 | 20261009135051 | stop_review_self_moderation | ✅ |
+| 54 | 20261009135209 | enforce_reviews_column_revocations | ✅ |
+
+### Notes on 52–54
+
+- **20261009135041** adds `rate_limit_counters` plus `check_rate_limit()` and
+  `prune_rate_limit_counters()`, both `SECURITY DEFINER` and `service_role`-only.
+  Replaces the edge functions' in-process `Map`, which was not a rate limit in
+  practice (per-container, keyed on a client-settable `x-forwarded-for`).
+- **20261009135051** adds `moderate_review()`, which checks `is_moderator()` and
+  derives `moderated_by` from `auth.uid()`. Its **column-level `REVOKE` had no
+  effect** — see below.
+- **20261009135209** fixes that. Postgres column privileges are *additive* with
+  table privileges, so the surviving table-level `GRANT UPDATE ON reviews` to
+  `anon` and `authenticated` overrode the column revoke entirely. This migration
+  revokes the table-level grant and re-grants UPDATE per column for the five
+  content columns only. **Verified with `has_column_privilege` after applying.**
+
+> Lesson worth keeping: a column-level `REVOKE` is a silent no-op if any
+> table-level `GRANT UPDATE` survives. Check
+> `information_schema.role_table_grants`, then verify with
+> `has_column_privilege`. A migration that runs without error may still do
+> nothing.
 
 ## Going forward
 
@@ -79,3 +103,7 @@ Every schema change must be:
 
 Never hand-edit the generated files. Never apply SQL to production without a
 matching file in `supabase/migrations/`.
+
+`apply_migration` assigns its **own** version timestamps, so the filename must
+be renamed to match the version it reports. A file whose name disagrees with
+`schema_migrations` is treated as unapplied and replayed by `supabase db push`.

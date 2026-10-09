@@ -27,3 +27,7 @@ dist-ssr
 *.sw?
 
 .env.example
+
+# Supabase CLI link state. Exposes the project ref, org slug and the AWS
+# pooler hostname, and is machine-specific -- see supabase/README.md.
+supabase/.temp/

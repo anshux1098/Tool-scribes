@@ -38,24 +38,49 @@ is a simpler alternative.
 ## Environment notes
 
 - Project ref: `qglvwvpsegrucrhcpzxd` (project "Pass").
-- `supabase/config.toml` is **not** present in this repo — CLI `db`/`link`
-  commands require running `supabase init` / `supabase link` first.
+- `supabase/config.toml` **is** present (added alongside the JWT-verification
+  fix). CLI `db`/`link` commands work; the project is linked via `.temp/`.
 - `.temp/` contains local CLI link state and should be git-ignored; do not
   commit it (it exposes the project ref and pooler URL).
+
+## Applying migrations from an AI session
+
+The Supabase MCP server must authenticate with a **scoped personal access
+token**, not OAuth — its OAuth grant is read-only and its token carries no
+scopes, so `execute_sql` fails with 403 "after trying upscoping".
+
+- `opencode.json` (repo root, git-ignored): `oauth: false` plus an
+  `Authorization: Bearer {file:~/.secrets/supabase-pat}` header.
+- The token needs **Database: read-write** and **Migrations: read-write**,
+  scoped to this project only.
+- `apply_migration` assigns its own version timestamps — rename the file in
+  `migrations/` to match what it reports, or `supabase db push` replays it.
 
 ## Known open items (do not treat this schema as final)
 
 - `clone_public_collection()` accepts `target_user_id` as a parameter and does
   not verify it equals `auth.uid()` — a user can create collections owned by
-  someone else. **Unfixed.**
+  someone else. **Unfixed.** (Confirmed still open by the Supabase security
+  advisor: callable by `anon`.)
 - `increment_upvote()` only guards `delta = 1`; a caller with no upvote row can
   decrement repeatedly. Needs an atomic upvote-toggle RPC plus a client change.
 - 24 routines have a mutable `search_path` (advisor `function_search_path_mutable`).
   Fixing requires schema-qualifying all table references first.
+- `get_creator_email()` / `get_submitter_email()` are `SECURITY DEFINER` with no
+  authorization check and are callable by `anon` — email enumeration.
+  **Unfixed.** (Confirmed still open by the advisor.)
+- `calculate_reputation(target_user_id)`, `delete_my_account()`,
+  `approve_submission()`, `reject_submission()`, `handle_new_user()`,
+  `vote_alternative()`, `unvote_alternative()`, `get_submissions_for_review()`
+  are all `SECURITY DEFINER` and executable by `anon` per the advisor. Each needs
+  an individual decision: some check roles internally, some are trigger-only and
+  should simply have `EXECUTE` revoked.
 - `notifyNewReview()` in `src/lib/notifications.ts` is imported by
   `useReviews.ts` but never called — review notifications do not fire.
 - Legacy tables `users`, `vaults`, `device_requests`, `curator_follows`,
   `reputation_scores` are unused by application code.
+- Leaked-password protection is disabled in Supabase Auth (advisor
+  `auth_leaked_password_protection`).
 
 ## Fixed since this file was written
 
@@ -64,7 +89,16 @@ is a simpler alternative.
   derives `moderated_by` from the session. Previously the `reviews: self
   update` policy validated `user_id` rather than the columns written, so a
   review author could PATCH their own `moderation_status` back to `active`.
-  Migration `20261008130000`.
+  Migrations `20261009135051` + `20261009135209` — the second was required
+  because the first's column-level `REVOKE` was overridden by a table-level
+  `GRANT UPDATE`.
+- `reviews` UPDATE is now granted at column granularity: authors can write only
+  `best_for, gotcha, free_tier, rating, updated_at`. `anon` has no UPDATE at
+  all (its only UPDATE policies are unsatisfiable without a session anyway).
+  `INSERT`/`DELETE` are unchanged.
+- AI edge-function rate limiting moved from an in-process `Map` to
+  `rate_limit_counters` with an atomic upsert keyed on the authenticated user
+  id. Migration `20261009135041`.
 - Allowed `moderation_status` values are `active | hidden | removed`
   (`reviews_moderation_status_check`), not `rejected`.
 - `reviews.tool_id` **does** have `REFERENCES tools(id) ON DELETE CASCADE` —

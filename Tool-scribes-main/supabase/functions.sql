@@ -1,11 +1,17 @@
 -- ============================================================================
--- ToolScribe — GENERATED ROUTINE SNAPSHOT (24 functions)
+-- ToolScribe — GENERATED ROUTINE SNAPSHOT (27 functions)
 -- ============================================================================
 -- !!! DO NOT HAND-EDIT — GENERATED FROM THE LIVE DATABASE !!!
 --
 -- Sibling of schema_structure.sql. Contains every routine in schema public
--- (24 total), exactly as deployed on 2026-09-18, emitted verbatim from
+-- (27 total), exactly as deployed on 2026-10-09, emitted verbatim from
 -- pg_get_functiondef().
+--
+-- 2026-10-09: appended moderate_review, check_rate_limit and
+-- prune_rate_limit_counters (migrations 20261009135041 / 20261009135051).
+-- All three are SECURITY DEFINER with EXECUTE revoked from anon and
+-- authenticated — verified absent from the Supabase security advisor's
+-- "Public Can Execute SECURITY DEFINER Function" list.
 --
 -- NOTE ON SECURITY DEFINER: 18 of these run as the table owner and therefore
 -- BYPASS row level security. Any function that takes the target user as a
@@ -727,3 +733,129 @@ END;
 $function$;
 
 -- ─── END OF GENERATED ROUTINE SNAPSHOT (24 functions) ───────────────────────
+-- ─── moderate_review(uuid, text, boolean, text) ──────────────────────────────
+-- Added 2026-10-09 (migration 20261009135051). Replaces the client-side
+-- .update() on reviews that let an author self-moderate.
+--
+-- SECURITY DEFINER, and EXECUTE is revoked from anon and authenticated --
+-- only service_role may call it. It still checks auth.uid() and
+-- is_moderator() internally, so a careless future GRANT does not make it
+-- public. moderated_by is derived from auth.uid(), never from the client.
+
+CREATE OR REPLACE FUNCTION public.moderate_review(
+  p_review_id uuid,
+  p_status text,
+  p_flagged boolean DEFAULT NULL::boolean,
+  p_flagged_reason text DEFAULT NULL::text
+)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path = public, pg_temp
+AS $function$
+begin
+  if auth.uid() is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  if not is_moderator() then
+    raise exception 'Not authorized: moderator privileges required';
+  end if;
+
+  if p_status not in ('active', 'hidden', 'removed') then
+    raise exception 'Unsupported moderation status: %', p_status;
+  end if;
+
+  if p_review_id is null then
+    raise exception 'Review id is required';
+  end if;
+
+  update public.reviews
+     set moderation_status  = p_status,
+         moderated_by       = auth.uid(),
+         moderated_at       = now(),
+         is_flagged         = coalesce(p_flagged, is_flagged),
+         flagged_reason     = coalesce(p_flagged_reason, flagged_reason)
+   where id = p_review_id;
+
+  if not found then
+    raise exception 'No such review: %', p_review_id;
+  end if;
+end;
+$function$;
+
+-- ─── check_rate_limit(text, integer, integer) / prune_rate_limit_counters() ──
+-- Added 2026-10-09 (migration 20261009135041). Replaces an in-process Map in
+-- the edge functions, which was per-container and keyed on a client-settable
+-- x-forwarded-for header.
+--
+-- The increment is a single atomic upsert, so two concurrent requests from one
+-- caller cannot both read the pre-increment count and both be admitted.
+-- EXECUTE is revoked from anon and authenticated: a direct caller could
+-- otherwise probe or poison another user's counter.
+
+CREATE OR REPLACE FUNCTION public.check_rate_limit(
+  p_key text,
+  p_limit integer DEFAULT 10,
+  p_window_seconds integer DEFAULT 60
+)
+ RETURNS TABLE(allowed boolean, retry_after integer)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path = public, pg_temp
+AS $function$
+declare
+  v_count integer;
+  v_window_started_at timestamptz;
+  v_window_seconds integer := greatest(coalesce(p_window_seconds, 60), 1);
+  v_limit integer := greatest(coalesce(p_limit, 10), 1);
+begin
+  if p_key is null or p_key = '' then
+    raise exception 'Rate limit key is required';
+  end if;
+
+  insert into public.rate_limit_counters as c (key, count, window_started_at)
+  values (p_key, 1, now())
+  on conflict (key) do update
+    set count = case
+                  when c.window_started_at <= now() - make_interval(secs => v_window_seconds)
+                    then 1
+                  else c.count + 1
+                end,
+        window_started_at = case
+                  when c.window_started_at <= now() - make_interval(secs => v_window_seconds)
+                    then now()
+                  else c.window_started_at
+                end
+  returning c.count, c.window_started_at into v_count, v_window_started_at;
+
+  return query
+    select
+      v_count <= v_limit,
+      case
+        when v_count <= v_limit then null
+        else greatest(
+          1,
+          ceil(extract(epoch from (
+            v_window_started_at + make_interval(secs => v_window_seconds) - now()
+          )))::integer
+        )
+      end;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.prune_rate_limit_counters()
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path = public, pg_temp
+AS $function$
+declare
+  v_removed integer;
+begin
+  delete from public.rate_limit_counters
+    where window_started_at <= now() - interval '1 hour';
+  get diagnostics v_removed = row_count;
+  return v_removed;
+end;
+$function$;

@@ -1,0 +1,11 @@
+# opencode.json references ~/.secrets/supabase-pat via {file:...}; it is
+# machine-specific and must never be committed. opencode.jsonc also exists so
+# the working copy stays valid JSONC on machines that add comments.
+opencode.json
+opencode.jsonc
+
+# Supabase CLI link state, at either repo root. Exposes the project ref, org
+# slug and AWS pooler hostname. Tool-scribes-main/supabase/.gitignore covers
+# the nested copy; this catches a stray one created by running the CLI from
+# the outer directory.
+supabase/.temp/
