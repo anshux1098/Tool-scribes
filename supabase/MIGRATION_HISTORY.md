@@ -72,8 +72,12 @@ mirrored as files in `supabase/migrations/`.
 | 52 | 20261009135041 | add_rate_limit_counters | ✅ |
 | 53 | 20261009135051 | stop_review_self_moderation | ✅ |
 | 54 | 20261009135209 | enforce_reviews_column_revocations | ✅ |
+| 55 | 20261009192135 | stop_tool_upvote_tampering | ✅ |
+| 56 | 20261009192643 | atomic_upvote_toggle | ✅ |
+| 57 | 20261009192844 | resync_tool_upvotes | ✅ |
+| 58 | 20261009193102 | fix_toggle_upvote_zero_row | ✅ |
 
-### Notes on 52–54
+### Notes on 52–58
 
 - **20261009135041** adds `rate_limit_counters` plus `check_rate_limit()` and
   `prune_rate_limit_counters()`, both `SECURITY DEFINER` and `service_role`-only.
@@ -87,6 +91,28 @@ mirrored as files in `supabase/migrations/`.
   `anon` and `authenticated` overrode the column revoke entirely. This migration
   revokes the table-level grant and re-grants UPDATE per column for the five
   content columns only. **Verified with `has_column_privilege` after applying.**
+- **20261009192135** applies the same pattern to `tools`. `tools: owner update`
+  validated the row, so a tool's **author** could PATCH `upvotes`, `added_by`,
+  `id` or `created_at` on their own row. UPDATE is now granted for four
+  content columns only: `screenshot_url`, `ai_summary`,
+  `ai_profile_generated_at`, `ai_profile_version`.
+- **20261009192643** adds `toggle_upvote(p_tool_id)`, replacing
+  `increment_upvote(tool_id, delta)`. The old function rejected a missing
+  upvote row only for `delta = 1`, so a caller with no row could pass
+  `delta = -1` repeatedly and drive any tool's counter negative. It also
+  incremented the counter instead of deriving it, so the client's two
+  round-trips could leave `tools.upvotes` permanently disagreeing with
+  `count(*)`. The new function has no delta parameter and derives the counter.
+  `increment_upvote` is revoked from every API role.
+- **20261009192844** repairs drift that had already accumulated: 4 tools had
+  vote rows with a stored count of 0 (Raycast, NotebookLM, Notion, Google AI
+  Studio). All undercounted. No tool was ever negative.
+- **20261009193102** fixes a bug in `…192643` introduced during that same
+  session. It used `delete … returning 1 into v_deleted`; in plpgsql an `INTO`
+  target fed by a zero-row statement becomes **NULL** rather than 0, so
+  `if v_deleted = 0` was falsy and the INSERT never ran — upvotes could only be
+  removed, never added. Replaced with `get diagnostics … row_count`.
+  **Caught by probing the function against real data, not by reading it.**
 
 > Lesson worth keeping: a column-level `REVOKE` is a silent no-op if any
 > table-level `GRANT UPDATE` survives. Check

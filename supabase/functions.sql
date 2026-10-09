@@ -1,5 +1,5 @@
 -- ============================================================================
--- ToolScribe — GENERATED ROUTINE SNAPSHOT (27 functions)
+-- ToolScribe — GENERATED ROUTINE SNAPSHOT (28 functions)
 -- ============================================================================
 -- !!! DO NOT HAND-EDIT — GENERATED FROM THE LIVE DATABASE !!!
 --
@@ -7,11 +7,13 @@
 -- (27 total), exactly as deployed on 2026-10-09, emitted verbatim from
 -- pg_get_functiondef().
 --
--- 2026-10-09: appended moderate_review, check_rate_limit and
--- prune_rate_limit_counters (migrations 20261009135041 / 20261009135051).
--- All three are SECURITY DEFINER with EXECUTE revoked from anon and
--- authenticated — verified absent from the Supabase security advisor's
--- "Public Can Execute SECURITY DEFINER Function" list.
+-- 2026-10-09: appended moderate_review, check_rate_limit,
+-- prune_rate_limit_counters and toggle_upvote (migrations 20261009135041 /
+-- 20261009135051 / 20261009192643). All four are SECURITY DEFINER.
+-- toggle_upvote, check_rate_limit, prune_rate_limit_counters and
+-- moderate_review have EXECUTE revoked from anon; the first three are
+-- service_role-only, moderate_review and toggle_upvote are authenticated-only.
+-- increment_upvote remains defined but is executable by NO API role.
 --
 -- NOTE ON SECURITY DEFINER: 18 of these run as the table owner and therefore
 -- BYPASS row level security. Any function that takes the target user as a
@@ -532,10 +534,13 @@ end;
 $function$;
 
 -- ─── increment_upvote(tool_id, delta) ───────────────────────────────────────
--- Residual weakness: the ownership check only raises for delta = 1. A caller
--- with NO upvote row can pass delta = -1 repeatedly and decrement the counter.
--- A real fix requires folding the upvote row write into this RPC (atomic
--- toggle), because the client currently deletes the row BEFORE calling -1.
+-- **RETIRED — no longer executable by any API role.** Superseded by
+-- toggle_upvote() below; see migration 20261009192643. Kept only so the
+-- history stays readable. Its ownership guard rejected a missing upvote row
+-- only when delta = 1, so a caller with NO row could pass delta = -1 in a loop
+-- and drive any tool's counter negative. It also INCREMENTED the counter
+-- rather than deriving it, so the client's two round-trips could leave the
+-- stored total permanently disagreeing with count(*).
 
 CREATE OR REPLACE FUNCTION public.increment_upvote(tool_id uuid, delta integer)
  RETURNS void
@@ -857,5 +862,65 @@ begin
     where window_started_at <= now() - interval '1 hour';
   get diagnostics v_removed = row_count;
   return v_removed;
+end;
+$function$;
+
+-- ─── toggle_upvote(p_tool_id) ────────────────────────────────────────────────
+-- Added 2026-10-09 (migrations 20261009192643 + 20261009193102). Replaces
+-- increment_upvote, which could be driven negative.
+--
+-- Two properties that make the old holes unreachable:
+--   * there is no delta parameter, so there is nothing to forge;
+--   * tools.upvotes is DERIVED from count(*) rather than incremented, so it
+--     cannot go negative, cannot drift from the upvotes table, and self-heals
+--     on the next toggle for that tool.
+--
+-- The DELETE..GET DIAGNOSTICS pair is read-and-remove in one atomic step, and
+-- the FOR UPDATE on tools serialises concurrent toggles of the same tool.
+--
+-- Uses get diagnostics row_count, NOT eturning ... into: a zero-row DELETE
+-- returns no row, which would leave an INTO target NULL rather than 0. That bug
+-- shipped briefly and made upvotes impossible to add -- see 20261009193102.
+
+CREATE OR REPLACE FUNCTION public.toggle_upvote(p_tool_id uuid)
+ RETURNS TABLE(upvoted boolean, upvotes integer)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path = public, pg_temp
+AS $function$
+declare
+  v_uid uuid := auth.uid();
+  v_deleted integer := 0;
+  v_count integer := 0;
+begin
+  if v_uid is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  if p_tool_id is null then
+    raise exception 'Tool id is required';
+  end if;
+
+  perform 1 from tools where id = p_tool_id for update;
+  if not found then
+    raise exception 'No such tool: %', p_tool_id;
+  end if;
+
+  delete from public.upvotes
+    where user_id = v_uid and tool_id = p_tool_id;
+  get diagnostics v_deleted = row_count;
+
+  if v_deleted = 0 then
+    insert into public.upvotes (user_id, tool_id)
+      values (v_uid, p_tool_id)
+      on conflict (user_id, tool_id) do nothing;
+  end if;
+
+  select count(*)::integer into v_count
+    from public.upvotes where tool_id = p_tool_id;
+
+  update tools set upvotes = v_count where id = p_tool_id;
+
+  return query select (v_deleted = 0), v_count;
 end;
 $function$;

@@ -15,11 +15,11 @@
 
 | | |
 |---|---|
-| Critical findings | **24 total → 6 fixed** (#1, #2, #3, #4, #5, #16) |
-| Migrations applied to production | **3** (`20261009135041`, `20261009135051`, `20261009135209`) |
+| Critical findings | **24 total → 8 fixed** (#1, #2, #3, #4, #5, #6, #7, #16) |
+| Migrations applied to production | **7** (`…135041` … `…193102`) |
 | TypeScript errors | **126 → 0** (`tsc -b` exits 0) |
 | **Blocking issue** | **None.** `moderate_review()` and the rate limiter now exist in production |
-| Next up | **#6** tool author can rewrite `upvotes` |
+| Next up | **#7** `increment_upvote` still allows decrements |
 
 The earlier "BLOCKED — migration not applied" section below is **resolved**;
 see the #5 entry. Read that entry before touching `reviews` again: the first
@@ -210,44 +210,129 @@ Config lives in `opencode.json` (git-ignored), reading the token from
 | `20261009135041` | `add_rate_limit_counters` | rate-limit counters table + `check_rate_limit()` + `prune_rate_limit_counters()`, all `service_role`-only |
 | `20261009135051` | `stop_review_self_moderation` | `moderate_review()` RPC + column comments (column revokes inert — see #5) |
 | `20261009135209` | `enforce_reviews_column_revocations` | revokes the table-level `GRANT UPDATE` that defeated #5 |
+| `20261009192135` | `stop_tool_upvote_tampering` | same pattern for `tools` — finding #6 |
+| `20261009192643` | `atomic_upvote_toggle` | `toggle_upvote()` replaces `increment_upvote()`; retires the old RPC — finding #7 |
+| `20261009192844` | `resync_tool_upvotes` | one-off data repair for counter drift the old design allowed |
+| `20261009193102` | `fix_toggle_upvote_zero_row` | fixes a bug in `…192643` that made upvotes impossible to add |
 
 Migration filenames were renamed to their **actual remote versions** —
 `apply_migration` assigns its own timestamps, and a filename that disagrees with
 `schema_migrations` makes `supabase db push` replay it.
 
-**Verified:** `list_migrations` shows all three; `has_function_privilege`
-confirms all three functions are `SECURITY DEFINER` and executable by
-`service_role` only (absent from both the anon and authenticated advisor
-lists); the rate limiter admits calls 1–2 and denies 3–4 with `retry_after=60`
-at `limit=2`.
+**Verified:** `list_migrations` shows all four; `has_function_privilege`
+confirms all three rate-limit/moderation functions are `SECURITY DEFINER` and
+executable by `service_role` only (absent from both the anon and authenticated
+advisor lists); the rate limiter admits calls 1–2 and denies 3–4 with
+`retry_after=60` at `limit=2`.
 
-### Commits not pushed
+### Commits
 
-2 commits sit ahead of `origin/main`. Scanned for API keys, tokens and JWTs —
-clean. `supabase/.temp/` is still tracked (finding #17).
+All work through the repo flatten is pushed to `origin/main`.
 
 ---
 
-## 📋 Next up — CRITICAL #6
+## ✅ CRITICAL #6 — Tool author can rewrite `upvotes` — `20261009192135`
 
-### #6 — Tool author can rewrite `upvotes`
+Exactly the same defect as #5, and caught the same way: checked
+`information_schema.role_table_grants` **before** writing the migration rather
+than after. `tools` had the identical blanket `GRANT UPDATE` to `anon` and
+`authenticated`, and `tools: owner update USING (added_by = auth.uid())`
+validates the row, never the columns. So the **author** of a tool — not just an
+admin — could PATCH:
 
-`useTools.ts:307-324` (`updateScreenshot`, `updateAiProfile`) calls
-`.from('tools').update(...)` straight from the browser, and
-`tools: owner update USING (added_by = auth.uid())` has no column restriction.
-The **tool author** — not just an admin — can PATCH any column on their own row
-including `upvotes`, `price_model`, and `added_by`, defeating the counter
-`increment_upvote` protects. Neither function checks the response `error`.
+- `upvotes` — the counter `increment_upvote()` exists to protect. Forge it to
+  the top of every trending sort.
+- `added_by` — identity, and the *predicate* on the owner update/delete
+  policies. Rewriting it transfers the tool or detaches it.
+- `id`, `created_at` — provenance.
 
-**Apply the #5 lesson here:** check for a table-level `GRANT UPDATE` on `tools`
-before attempting a column revoke, and verify with `has_column_privilege`.
+Migration revokes the table-level grant first, then re-grants UPDATE for the
+only four columns the client actually writes — `screenshot_url`, `ai_summary`,
+`ai_profile_generated_at`, `ai_profile_version` (from `useTools.updateScreenshot`,
+`useTools.updateAiProfile`, `generate-ai-profile.saveAiProfile`).
 
-### Then, in order
+**Verified in production:**
 
-| # | Finding | Needs migration | Notes |
-|---|---|:--:|---|
-| 7 | `increment_upvote` allows decrementing | ✅ | `functions.sql:534-550` guards only `delta = 1`; `useTools.ts:224` deletes the row *before* calling with `-1`. Needs an atomic `toggle_upvote(tool_id)` deriving the count from `count(*)` |
-| 8 | `clone_public_collection` writes into arbitrary accounts | ✅ | `functions.sql:114-141`; drop the `target_user_id` param, hardcode `auth.uid()` |
+| Check | Result |
+|---|---|
+| updatable columns for `authenticated` | exactly 4 |
+| `upvotes`, `added_by`, `id`, `created_at` | denied |
+| `anon` UPDATE | denied |
+| INSERT / DELETE / SELECT (`authenticated` + `anon`), `service_role` UPDATE | unchanged |
+
+Legit `upvotes` writers that remain: `increment_upvote()` and
+`approve_submission()`, both `SECURITY DEFINER` running as the table owner.
+
+---
+
+## ✅ CRITICAL #7 — `increment_upvote` could be used to forge any counter
+
+`increment_upvote(tool_id, delta)` checked that the caller held an upvote row
+**only to reject `delta = 1`**. A caller with no upvote row could pass
+`delta = -1` in a loop and drive any tool's counter negative. The client made
+it trivial: `toggleUpvote` deleted the row *first* and only then called the RPC
+with `-1`, so it always saw the exact state its guard was meant to reject.
+
+There was a second, quieter defect: the counter was **incremented**, and the
+row write and the RPC were two independent round-trips. Any failure between
+them left the stored total permanently disagreeing with `count(*)`, with no
+reconciliation anywhere.
+
+`toggle_upvote(tool_id)` replaces it. There is no `delta` parameter, so there
+is nothing to forge; the counter is **derived** from `count(*)` rather than
+adjusted, so it cannot go negative, cannot drift, and self-heals on the next
+tap. `increment_upvote` is revoked from every API role but left in place for
+readability.
+
+**The bug I introduced and caught.** The first version used
+`delete … returning 1 into v_deleted`. In plpgsql an `INTO` target fed by a
+zero-row statement is set to **NULL** — the `:= 0` initialiser is overwritten,
+not preserved. So `v_deleted = 0` was NULL (falsy), the `INSERT` was skipped,
+and **upvotes could never be added at all**. Found by probing the function
+before shipping, not by reading it. Fixed in `20261009193102` using
+`get diagnostics … row_count`, which is 0 for a zero-row delete.
+
+**Verified** — four consecutive taps against a real tool:
+
+| tap | `upvoted` | returned | stored |
+|---|---|---|---|
+| 1 | true | 1 | 1 |
+| 2 | false | 0 | 0 |
+| 3 | true | 1 | 1 |
+| 4 | false | 0 | 0 |
+
+Counter returns to its original value; probe left no residue. Also confirmed
+`increment_upvote` is no longer executable by any API role, and no tool has a
+negative counter.
+
+**Data repair (`20261009192844`).** The old design had already produced real
+drift — 4 tools had vote rows with a stored count of 0:
+
+| tool | stored | actual |
+|---|:--:|:--:|
+| Raycast | 0 | 2 |
+| NotebookLM | 0 | 2 |
+| Notion | 0 | 1 |
+| Google AI Studio | 0 | 1 |
+
+All undercounted, all consistent with "row written, RPC rejected". Resynced;
+drift now 0. No tool was ever negative, so #7 was exploitable but unused.
+
+---
+
+## 📋 Next up — CRITICAL #8
+
+### #8 — `clone_public_collection` writes into arbitrary accounts
+
+`functions.sql:114-141` is `SECURITY DEFINER` and accepts `target_user_id` as
+a parameter with **no `= auth.uid()` comparison**, so any authenticated user
+can create collections owned by someone else. Confirmed still open by the
+Supabase security advisor (callable by `anon`). Drop the parameter and hardcode
+`auth.uid()`.
+
+Note `PublicCollectionPage.tsx:240` calls `notifyCollectionFollowed` directly
+and duplicates the follow logic in the dead `useCollections.followCollection`,
+so there is client-side churn to reconcile alongside the DB change.
 | 9 | `reputation_score` self-assignable | ✅ | `useProfile.ts:157-167` types update as `Record<string, unknown>`; narrow to a `ProfileUpdate` type + revoke the column |
 | 10 | Email enumeration | ✅ | `get_creator_email` / `get_submitter_email` (`functions.sql:284, :390`) — `SECURITY DEFINER`, no authz, no `REVOKE FROM anon` |
 
@@ -293,6 +378,11 @@ status, identity).
   is silently overridden by any surviving table-level `GRANT UPDATE`.
 - `apply_migration` assigns its **own** version timestamps. Rename the file to
   match, or `supabase db push` will replay it.
+- **Probe new SQL against real data before calling it done.** `toggle_upvote`
+  applied cleanly, passed review, and was completely broken — a plpgsql
+  `INTO` target fed by a zero-row statement is set to **NULL**, not to the
+  variable's initialiser, so `if v_deleted = 0` was falsy and the INSERT never
+  ran. Use `get diagnostics … row_count` when you need "how many matched".
 - `AGENTS.md` holds project conventions — read it too.
 - `supabase/schema_structure.sql` and `supabase/functions.sql` are **generated**.
   Never hand-edit. Regenerate after any schema change.

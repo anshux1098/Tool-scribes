@@ -35,10 +35,10 @@
 --    2026-10-09 migrations, which added exactly one index.)
 --
 -- 2026-10-09 additions (migrations 20261009135041 / 20261009135051 /
--- 20261009135209):
+-- 20261009135209 / 20261009192135):
 --   + public.rate_limit_counters table, its index, RLS enabled (no policies —
 --     reached only through check_rate_limit(), which is service_role-only)
---   + SECTION 9: column-level grants on public.reviews
+--   + SECTION 9: column-level grants on public.reviews and public.tools
 -- ============================================================================
 
 -- ─── SECTION 1: CUSTOM TYPES ────────────────────────────────────────────────
@@ -725,6 +725,31 @@ CREATE TRIGGER recalc_rep_review AFTER INSERT OR DELETE OR UPDATE ON public.revi
 --
 --   Verified with has_column_privilege: exactly those 5 columns true for
 --   authenticated, all others false for both authenticated and anon.
+--
+-- public.tools — migration 20261009192135
+--   REVOKE UPDATE ON public.tools FROM anon, authenticated;  (table level)
+--   GRANT UPDATE (screenshot_url, ai_summary, ai_profile_generated_at,
+--                 ai_profile_version) ON public.tools TO authenticated;
+--
+--   Same defect as reviews: `tools: owner update USING (added_by = auth.uid())`
+--   validates the row, not the columns, so the tool AUTHOR could PATCH upvotes,
+--   added_by, id or created_at on their own row. upvotes is the counter
+--   increment_upvote() protects; added_by is the predicate on the owner
+--   update/delete policies.
+--
+--   The four granted columns are the only ones the client writes, from
+--   useTools.updateScreenshot, useTools.updateAiProfile and
+--   generate-ai-profile.saveAiProfile. Both AI call sites authenticate as
+--   `authenticated` and are covered by `tools: admin all`.
+--
+--   Verified with has_column_privilege: exactly 4 updatable columns for
+--   authenticated, none for anon. INSERT / DELETE / SELECT unchanged for both
+--   roles; service_role UPDATE unchanged (approve_submission).
+--
+--   tools.upvotes is now written only by toggle_upvote() and
+--   approve_submission(), both SECURITY DEFINER running as the table owner.
+--   increment_upvote() is retired and executable by no API role.
+--   migration 20261009192844 resynced the counters; drift is now 0.
 
 -- ─── END OF GENERATED SNAPSHOT ──────────────────────────────────────────────
 -- Routine definitions (27 functions) are in the sibling file ./functions.sql

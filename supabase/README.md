@@ -58,12 +58,17 @@ scopes, so `execute_sql` fails with 403 "after trying upscoping".
 
 ## Known open items (do not treat this schema as final)
 
+- `increment_upvote()` is **retired** and no longer executable by any API role.
+  It rejected a missing upvote row only for `delta = 1`, so a caller with no row
+  could pass `delta = -1` repeatedly. `toggle_upvote(tool_id)` replaces it:
+  no delta parameter, and `tools.upvotes` is derived from `count(*)` rather
+  than incremented, so it cannot go negative or drift. Client migrated.
+  Counter drift that had already accumulated was resynced by
+  `20261009192844` (4 tools were undercounted).
 - `clone_public_collection()` accepts `target_user_id` as a parameter and does
   not verify it equals `auth.uid()` — a user can create collections owned by
   someone else. **Unfixed.** (Confirmed still open by the Supabase security
   advisor: callable by `anon`.)
-- `increment_upvote()` only guards `delta = 1`; a caller with no upvote row can
-  decrement repeatedly. Needs an atomic upvote-toggle RPC plus a client change.
 - 24 routines have a mutable `search_path` (advisor `function_search_path_mutable`).
   Fixing requires schema-qualifying all table references first.
 - `get_creator_email()` / `get_submitter_email()` are `SECURITY DEFINER` with no
@@ -96,6 +101,13 @@ scopes, so `execute_sql` fails with 403 "after trying upscoping".
   `best_for, gotcha, free_tier, rating, updated_at`. `anon` has no UPDATE at
   all (its only UPDATE policies are unsatisfiable without a session anyway).
   `INSERT`/`DELETE` are unchanged.
+- `tools` UPDATE is likewise column-scoped (`20261009192135`): clients may write
+  only `screenshot_url, ai_summary, ai_profile_generated_at, ai_profile_version`.
+  The tool **author** could previously PATCH `upvotes`, `added_by`, `id` and
+  `created_at` on their own row, because `tools: owner update` validates the row
+  and a table-level `GRANT UPDATE` overrode any column revoke. `upvotes` is now
+  written only by `increment_upvote()` / `approve_submission()`, and `added_by`
+  is set on insert and never afterwards.
 - AI edge-function rate limiting moved from an in-process `Map` to
   `rate_limit_counters` with an atomic upsert keyed on the authenticated user
   id. Migration `20261009135041`.

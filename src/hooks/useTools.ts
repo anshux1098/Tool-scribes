@@ -221,23 +221,26 @@ export function useTools() {
     if (!uuid || !user) return;
     const tool = toolsRef.current.find(t => t.id === numId);
     const wasUpvoted = tool?.upvotedByMe ?? false;
-    const delta = wasUpvoted ? -1 : 1;
     setTools(prev => prev.map(t =>
-      t.id === numId ? { ...t, upvotedByMe: !wasUpvoted, upvotes: t.upvotes + delta } : t
+      t.id === numId ? { ...t, upvotedByMe: !wasUpvoted, upvotes: t.upvotes + (wasUpvoted ? -1 : 1) } : t
     ));
-    try {
-      if (wasUpvoted) {
-        await supabase.from('upvotes').delete().eq('user_id', user.id).eq('tool_id', uuid);
-      } else {
-        await supabase.from('upvotes').insert({ user_id: user.id, tool_id: uuid });
-      }
-      await supabase.rpc('increment_upvote', { tool_id: uuid, delta });
-    } catch (e) {
-      console.error('toggleUpvote error', e);
+
+    // The RPC owns the whole toggle: it inserts/deletes the upvote row AND
+    // derives tools.upvotes from count(*). Do not write the row from here --
+    // that would double-toggle. It also means the counter cannot drift away
+    // from the upvotes table the way an increment-based RPC could.
+    const { data, error } = await supabase.rpc('toggle_upvote', { p_tool_id: uuid });
+    if (error || !data?.[0]) {
       setTools(prev => prev.map(t =>
-        t.id === numId ? { ...t, upvotedByMe: wasUpvoted, upvotes: t.upvotes - delta } : t
+        t.id === numId ? { ...t, upvotedByMe: wasUpvoted, upvotes: t.upvotes + (wasUpvoted ? 1 : -1) } : t
       ));
+      return;
     }
+
+    // Reconcile against the server's count rather than trusting the
+    // optimistic guess, which also repairs any pre-existing drift.
+    const { upvoted, upvotes } = data[0] as { upvoted: boolean; upvotes: number };
+    setTools(prev => prev.map(t => (t.id === numId ? { ...t, upvotedByMe: upvoted, upvotes } : t)));
   }, [user, getUuid]);
 
   const saveToVault = useCallback(async (numId: number) => {
