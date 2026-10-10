@@ -77,6 +77,7 @@ mirrored as files in `supabase/migrations/`.
 | 57 | 20261009192844 | resync_tool_upvotes | ✅ |
 | 58 | 20261009193102 | fix_toggle_upvote_zero_row | ✅ |
 | 59 | 20261010045241 | harden_clone_and_email | ✅ |
+| 60 | 20261010091402 | scope_profile_updates | ✅ |
 
 ### Notes on 52–58
 
@@ -126,6 +127,15 @@ mirrored as files in `supabase/migrations/`.
   session and restricts the read to the owner or staff — `REVOKE` alone would
   not have sufficed, since as `SECURITY DEFINER` they were equally reachable by
   any authenticated caller.
+- **20261010091402** fixes #9. `profiles` had the same blanket `GRANT UPDATE`,
+  and `profiles: self update` validates the row only — its `WITH CHECK` merely
+  re-confirms `user_id`, which a caller can leave unchanged while rewriting
+  everything else. `reputation_score` (self-assigned reputation, rendered
+  beside other curators), `user_id` (identity, and the predicate on every
+  policy for the table), `last_seen_notifications_at`, `created_at` and `id`
+  were all client-writable. UPDATE is now granted for 20 content columns.
+  `src/hooks/useProfile.ts` gained a matching `ProfileUpdate` interface to
+  replace `Record<string, unknown>`.
 
 > Lesson worth keeping: a column-level `REVOKE` is a silent no-op if any
 > table-level `GRANT UPDATE` survives. Check

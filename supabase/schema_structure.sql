@@ -35,10 +35,11 @@
 --    2026-10-09 migrations, which added exactly one index.)
 --
 -- 2026-10-09 additions (migrations 20261009135041 / 20261009135051 /
--- 20261009135209 / 20261009192135):
+-- 20261009135209 / 20261009192135 / 20261010091402):
 --   + public.rate_limit_counters table, its index, RLS enabled (no policies —
 --     reached only through check_rate_limit(), which is service_role-only)
---   + SECTION 9: column-level grants on public.reviews and public.tools
+--   + SECTION 9: column-level grants on public.reviews, public.tools and
+--     public.profiles
 -- ============================================================================
 
 -- ─── SECTION 1: CUSTOM TYPES ────────────────────────────────────────────────
@@ -725,6 +726,33 @@ CREATE TRIGGER recalc_rep_review AFTER INSERT OR DELETE OR UPDATE ON public.revi
 --
 --   Verified with has_column_privilege: exactly those 5 columns true for
 --   authenticated, all others false for both authenticated and anon.
+--
+-- public.profiles — migration 20261010091402
+--   REVOKE UPDATE ON public.profiles FROM anon, authenticated;  (table level)
+--   GRANT UPDATE (username, display_name, tagline, bio, location, website,
+--                 github, twitter, linkedin, public_profile, curator_badge,
+--                 show_reviews, show_collections, show_followers,
+--                 avatar_url, banner_url, featured_collection_id,
+--                 contact_url, signature_quote, updated_at)
+--     ON public.profiles TO authenticated;
+--
+-- `profiles: self update USING (user_id = auth.uid()) WITH CHECK
+-- (user_id = auth.uid())` validates the ROW, and the WITH CHECK only
+-- re-confirms user_id -- which the caller is free to leave unchanged while
+-- altering everything else. With UPDATE granted table-wide, a user could write
+-- reputation_score (forge their own standing, rendered by
+-- useFollowingFeed.ts next to other curators), user_id (identity, and the
+-- predicate on every policy for this table), last_seen_notifications_at
+-- (owned by mark_notifications_seen), created_at and id.
+--
+-- The 20 granted columns mirror the ProfileUpdate interface in
+-- src/hooks/useProfile.ts, which replaced updateProfile's
+-- Record<string, unknown> parameter so a bad key is now a compile error.
+--
+-- Verified with has_column_privilege: exactly 20 updatable columns for
+-- authenticated, none for anon. reputation_score, user_id,
+-- last_seen_notifications_at, created_at and id are all denied. INSERT,
+-- SELECT and DELETE unchanged for both roles; service_role UPDATE unchanged.
 --
 -- public.tools — migration 20261009192135
 --   REVOKE UPDATE ON public.tools FROM anon, authenticated;  (table level)

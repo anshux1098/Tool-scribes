@@ -88,6 +88,40 @@ export function useProfile(username?: string) {
   return { profile, ownedTools, loading, error, refetch: fetchProfile };
 }
 
+/**
+ * The columns a client is allowed to write on its own profile.
+ *
+ * `updateProfile` used to accept `Record<string, unknown>` and spread it
+ * straight into the UPDATE, so nothing stopped a caller passing
+ * `reputation_score` or `user_id`. Migration 20261010091402 revoked those at
+ * the database level; this type is the matching client-side guard, so a future
+ * call site cannot reintroduce the hole without a compile error.
+ *
+ * The list mirrors the column grant in that migration exactly. If you add a
+ * column here, add it there too, or the write will fail at runtime.
+ */
+export interface ProfileUpdate {
+  username?: string;
+  display_name?: string;
+  tagline?: string;
+  bio?: string;
+  location?: string;
+  website?: string;
+  github?: string;
+  twitter?: string;
+  linkedin?: string;
+  public_profile?: boolean;
+  curator_badge?: string | null;
+  show_reviews?: boolean;
+  show_collections?: boolean;
+  show_followers?: boolean;
+  avatar_url?: string | null;
+  banner_url?: string | null;
+  featured_collection_id?: string | null;
+  contact_url?: string;
+  signature_quote?: string;
+}
+
 export function useCurrentProfile() {
   const { user } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -154,7 +188,7 @@ export function useCurrentProfile() {
 
   useEffect(() => { fetchProfile(); }, [fetchProfile]);
 
-  const updateProfile = useCallback(async (updates: Record<string, unknown>): Promise<boolean> => {
+  const updateProfile = useCallback(async (updates: ProfileUpdate): Promise<boolean> => {
     if (!user) { console.error('[useCurrentProfile] updateProfile: no user'); return false; }
     try {
       const ensured = await ensureProfileRow();

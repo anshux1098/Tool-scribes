@@ -15,11 +15,11 @@
 
 | | |
 |---|---|
-| Critical findings | **24 total → 11 fixed** (#1–#8, #10, #14, #16) |
-| Migrations applied to production | **8** (`…135041` … `…045241`) |
+| Critical findings | **24 total → 12 fixed** (#1–#10, #14, #16) |
+| Migrations applied to production | **9** (`…135041` … `…091402`) |
 | TypeScript errors | **126 → 0** (`tsc -b` exits 0) |
 | **Blocking issue** | **None.** `moderate_review()` and the rate limiter now exist in production |
-| Next up | **#9** `reputation_score` + `user_id` self-assignable |
+| Next up | **#11** PostgREST filter injection (search + edge functions) |
 
 The earlier "BLOCKED — migration not applied" section below is **resolved**;
 see the #5 entry. Read that entry before touching `reviews` again: the first
@@ -388,26 +388,56 @@ raw string is no longer reachable from any click handler.
 
 ---
 
-## 📋 Next up — CRITICAL #9
+---
 
-### #9 — `reputation_score` and `user_id` self-assignable
+## ✅ CRITICAL #9 — `20261010091402`
 
-Same class as #5/#6, and the same trap: `profiles: self update USING
-(user_id = auth.uid())` validates the row, and **all 24 columns** are UPDATE-
-writable by `authenticated` — including `reputation_score` (forge your own
-standing) and `user_id` (the RLS predicate itself).
+Caught the same way as #5 and #6: `role_table_grants` showed the identical
+blanket `GRANT UPDATE ON profiles`, and `profiles: self update USING
+(user_id = auth.uid()) WITH CHECK (user_id = auth.uid())` validates the **row**.
 
-`useProfile.ts:157` types the update as `Record<string, unknown>` and spreads it
-verbatim, so the type system cannot catch a bad key.
+The `WITH CHECK` is worth dwelling on, because it looks like protection: it
+re-confirms `user_id`, which the caller is simply free to leave unchanged while
+altering everything else.
 
-Fix, following the pattern now proven four times: revoke the table-level grant,
-re-grant only the columns `ProfileSettingsModal` actually writes, and make
-`reputation_score` + `user_id` server-owned. Narrow the hook's parameter type
-to a `ProfileUpdate` interface at the same time so this cannot regress
-silently.
+Writable trust columns before this migration:
 
-**Check `information_schema.role_table_grants` first** — that check has caught a
-no-op every single time.
+| column | risk |
+|---|---|
+| `reputation_score` | forge your own standing — rendered by `useFollowingFeed.ts:81` beside other curators, and derived by `calculate_reputation()` from real signals |
+| `user_id` | **identity, and the predicate on every policy for this table** — retarget the row, or detach it and escape the `USING` check |
+| `last_seen_notifications_at` | owned by `mark_notifications_seen()`, which already checks `p_user_id = auth.uid()` |
+| `created_at`, `id` | provenance |
+
+Now column-scoped to the 20 columns the app actually writes.
+**Verified:** exactly 20 updatable for `authenticated`, 0 for `anon`, all five
+trust columns denied, INSERT/SELECT/DELETE and `service_role` unchanged.
+
+Client side: `updateProfile` took `Record<string, unknown>` and spread it
+verbatim. It now takes a **`ProfileUpdate` interface** listing exactly those 20
+columns, so passing `reputation_score` is a compile error rather than a runtime
+grant failure. The two lists must be kept in sync — the doc comment says so.
+
+INSERT deliberately untouched: `profiles: self insert` is how a row is created
+on first sign-in (`useProfile.ts:106`).
+
+---
+
+## 📋 Next up — CRITICAL #11
+
+### #11 — PostgREST filter injection, two sites
+
+- `src/lib/search/simple-engine.ts:18-19` interpolates each search token into
+  `name.ilike.%${safe}%` and joins with `,`. `escapeLike` (`:7-9`) escapes `%`,
+  `_`, `\` — the SQL `LIKE` grammar — but **not** the PostgREST filter grammar.
+  So `q,category.eq.dev` injects an equality condition via `.or()` (`:49`, `:70`,
+  `:95`).
+- `supabase/functions/generate-ai-profile/index.ts:84, :199, :212` interpolates
+  `toolId` straight into `?id=eq.${toolId}` with no UUID validation and no
+  `encodeURIComponent`. The catalog path in `ask-toolscribe/index.ts:108` does
+  not interpolate — that is the pattern to copy.
+
+Both are input validation, no migration needed.
 | 9 | `reputation_score` self-assignable | ✅ | `useProfile.ts:157-167` types update as `Record<string, unknown>`; narrow to a `ProfileUpdate` type + revoke the column |
 | 10 | Email enumeration | ✅ | `get_creator_email` / `get_submitter_email` (`functions.sql:284, :390`) — `SECURITY DEFINER`, no authz, no `REVOKE FROM anon` |
 

@@ -65,6 +65,11 @@ scopes, so `execute_sql` fails with 403 "after trying upscoping".
   than incremented, so it cannot go negative or drift. Client migrated.
   Counter drift that had already accumulated was resynced by
   `20261009192844` (4 tools were undercounted).
+- `profiles` UPDATE is column-scoped (`20261010091402`): 20 content columns for
+  `authenticated`, none for `anon`. `reputation_score`, `user_id` (the predicate
+  on every policy for the table), `last_seen_notifications_at`, `created_at` and
+  `id` are server-owned. `src/hooks/useProfile.ts` exports a matching
+  `ProfileUpdate` interface — **keep the two lists in sync**.
 - 24 routines have a mutable `search_path` (advisor `function_search_path_mutable`).
   Fixing requires schema-qualifying all table references first.
 - `calculate_reputation(target_user_id)`, `delete_my_account()`,
