@@ -81,9 +81,27 @@ function collectionCoverGradient(name: string): string {
   return patterns[Math.abs(h) % patterns.length];
 }
 
+function normalizeContactUrl(url: string): string | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+  // Treat a bare host as https, so "example.com" still works.
+  const candidate = /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    return null;
+  }
+  // Only ever hand an http(s) URL to window.open. Without this, a stored
+  // "javascript:..." value executes when another user clicks "Message".
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  return parsed.toString();
+}
+
 function parseContactUrl(url: string): { label: string; url: string; icon: ReactNode }[] {
-  if (!url) return [];
-  const normalized = url.startsWith('http') ? url : `https://${url}`;
+  const safe = normalizeContactUrl(url);
+  if (!safe) return [];
+  const normalized = safe;
   if (normalized.includes('discord.gg/') || normalized.includes('discord.com/users/')) {
     return [{ label: 'Discord', url: normalized, icon: <MessageCircle size={14} /> }];
   }
@@ -338,7 +356,11 @@ export default function ProfilePage() {
   const github = profile?.github || '';
   const twitter = profile?.twitter || '';
   const linkedin = profile?.linkedin || '';
+  // Raw DB value, normalized for display only. `safeContactUrl` is what may be
+  // passed to window.open -- never `contactUrl`, which can hold a
+  // javascript: URL from a row written before validation existed.
   const contactUrl = profile?.contact_url || '';
+  const safeContactUrl = normalizeContactUrl(contactUrl);
   const followSystem = useFollow();
 
   // Check follow status on mount
@@ -611,8 +633,8 @@ export default function ProfilePage() {
                 ) : null}
                 <button
                   onClick={() => {
-                    if (contactUrl) {
-                      window.open(contactUrl, '_blank', 'noopener,noreferrer');
+                    if (safeContactUrl) {
+                      window.open(safeContactUrl, '_blank', 'noopener,noreferrer');
                     } else {
                       toast('No contact method provided', {
                         description: 'This user has not set up a contact method yet.',
@@ -620,7 +642,7 @@ export default function ProfilePage() {
                     }
                   }}
                   className={`px-5 py-2.5 rounded-lg text-[13px] font-dmsans transition-colors border ${
-                    contactUrl ? 'cursor-pointer hover:bg-white/50' : 'opacity-40 cursor-not-allowed'
+                    safeContactUrl ? 'cursor-pointer hover:bg-white/50' : 'opacity-40 cursor-not-allowed'
                   }`}
                   style={{ color: contactUrl ? '#2D6A4F' : '#5a5a5a', borderColor: '#D4CFC5' }}
                 >
@@ -691,8 +713,8 @@ export default function ProfilePage() {
                 <div className="mt-4 pt-4 border-t" style={{ borderColor: '#E5E0D6' }}>
                   <button
                     onClick={() => {
-                      if (contactUrl) {
-                        window.open(contactUrl, '_blank', 'noopener,noreferrer');
+                      if (safeContactUrl) {
+                        window.open(safeContactUrl, '_blank', 'noopener,noreferrer');
                       } else {
                         toast('No contact method provided', {
                           description: 'This user has not set up a contact method yet.',
@@ -700,7 +722,7 @@ export default function ProfilePage() {
                       }
                     }}
                     className={`w-full py-2.5 rounded-lg text-[13px] font-dmsans font-medium transition-colors border ${
-                      contactUrl ? 'cursor-pointer hover:bg-white/50' : 'opacity-40'
+                      safeContactUrl ? 'cursor-pointer hover:bg-white/50' : 'opacity-40'
                     }`}
                     style={{ color: contactUrl ? '#2D6A4F' : '#5a5a5a', borderColor: '#D4CFC5' }}
                   >

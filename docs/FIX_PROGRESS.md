@@ -15,11 +15,11 @@
 
 | | |
 |---|---|
-| Critical findings | **24 total → 8 fixed** (#1, #2, #3, #4, #5, #6, #7, #16) |
-| Migrations applied to production | **7** (`…135041` … `…193102`) |
+| Critical findings | **24 total → 11 fixed** (#1–#8, #10, #14, #16) |
+| Migrations applied to production | **8** (`…135041` … `…045241`) |
 | TypeScript errors | **126 → 0** (`tsc -b` exits 0) |
 | **Blocking issue** | **None.** `moderate_review()` and the rate limiter now exist in production |
-| Next up | **#7** `increment_upvote` still allows decrements |
+| Next up | **#9** `reputation_score` + `user_id` self-assignable |
 
 The earlier "BLOCKED — migration not applied" section below is **resolved**;
 see the #5 entry. Read that entry before touching `reviews` again: the first
@@ -320,19 +320,94 @@ drift now 0. No tool was ever negative, so #7 was exploitable but unused.
 
 ---
 
-## 📋 Next up — CRITICAL #8
+## ✅ CRITICAL #8 + #10 — `20261010045241`
 
-### #8 — `clone_public_collection` writes into arbitrary accounts
+One migration, because both are `SECURITY DEFINER` functions that trusted an
+identity from the caller. The Supabase advisor listed all three as callable by
+`anon`; verified live before writing anything.
 
-`functions.sql:114-141` is `SECURITY DEFINER` and accepts `target_user_id` as
-a parameter with **no `= auth.uid()` comparison**, so any authenticated user
-can create collections owned by someone else. Confirmed still open by the
-Supabase security advisor (callable by `anon`). Drop the parameter and hardcode
-`auth.uid()`.
+### #8 — cross-account collection cloning
 
-Note `PublicCollectionPage.tsx:240` calls `notifyCollectionFollowed` directly
-and duplicates the follow logic in the dead `useCollections.followCollection`,
-so there is client-side churn to reconcile alongside the DB change.
+`clone_public_collection(source_collection_id, target_user_id)` took the owner
+as a **parameter** and validated only that the source collection was public, so
+any caller could create collections owned by anyone.
+
+New canonical signature `clone_public_collection(p_source_collection_id)`
+derives the owner from `auth.uid()`. The old two-argument form is kept as a
+**wrapper that ignores `target_user_id`** — dropping it outright would make an
+un-migrated client fail with a confusing "function does not exist" (PostgREST
+matches on argument list). Overriding means a stale caller gets its own
+collection instead of writing into someone else's account.
+
+Probed the actual attack against production, passing a different user's id:
+
+| check | result |
+|---|---|
+| attacker id passed in | `52f69993-…` |
+| actual clone owner | `44354e37-…` (= the caller) |
+| owned by attacker? | **no — safe** |
+
+`PublicCollectionPage.tsx` migrated to the one-argument form. Probe rows cleaned
+up afterwards; `clone_count` restored.
+
+### #10 — email enumeration
+
+`get_creator_email` and `get_submitter_email` read `auth.users.email` with no
+authorization check and no `REVOKE FROM anon`. `get_creator_email` was fetched
+on **every** public collection page load (`PublicCollectionPage.tsx:65`).
+
+`REVOKE` alone would not have been enough — they are `SECURITY DEFINER`, so any
+*authenticated* caller would still reach them. Each now requires a session **and**
+restricts the read to the owner or a moderator/admin.
+
+Probed:
+
+| caller | outcome |
+|---|---|
+| anonymous | blocked — `Not authenticated` |
+| signed in, not the owner | blocked — `Not authorized` |
+
+`PublicCollectionPage.tsx` no longer calls `get_creator_email` at all: the value
+was assigned to `col.creatorEmail` and **never rendered**, so dropping the
+per-page-load fetch loses nothing and removes the enumeration attempt entirely.
+
+---
+
+## ✅ CRITICAL #14 — stored XSS via `contact_url`
+
+`ProfilePage.tsx` called `window.open(contactUrl, …)` on the **raw DB value** at
+two sites, while the same field was normalized for display only by
+`parseContactUrl`. Any row holding a `javascript:` URL — legacy data, a direct DB
+write, a future code path — turned another user's "Message" button into script
+execution.
+
+Added `normalizeContactUrl()`, which parses the value, defaults a bare host to
+`https://`, and **returns null for any non-`http(s)` scheme**. Both
+`window.open` sites and the button styling now use the normalized value; the
+raw string is no longer reachable from any click handler.
+
+---
+
+## 📋 Next up — CRITICAL #9
+
+### #9 — `reputation_score` and `user_id` self-assignable
+
+Same class as #5/#6, and the same trap: `profiles: self update USING
+(user_id = auth.uid())` validates the row, and **all 24 columns** are UPDATE-
+writable by `authenticated` — including `reputation_score` (forge your own
+standing) and `user_id` (the RLS predicate itself).
+
+`useProfile.ts:157` types the update as `Record<string, unknown>` and spreads it
+verbatim, so the type system cannot catch a bad key.
+
+Fix, following the pattern now proven four times: revoke the table-level grant,
+re-grant only the columns `ProfileSettingsModal` actually writes, and make
+`reputation_score` + `user_id` server-owned. Narrow the hook's parameter type
+to a `ProfileUpdate` interface at the same time so this cannot regress
+silently.
+
+**Check `information_schema.role_table_grants` first** — that check has caught a
+no-op every single time.
 | 9 | `reputation_score` self-assignable | ✅ | `useProfile.ts:157-167` types update as `Record<string, unknown>`; narrow to a `ProfileUpdate` type + revoke the column |
 | 10 | Email enumeration | ✅ | `get_creator_email` / `get_submitter_email` (`functions.sql:284, :390`) — `SECURITY DEFINER`, no authz, no `REVOKE FROM anon` |
 

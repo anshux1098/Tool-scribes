@@ -20,7 +20,6 @@ interface PublicCollectionData {
   toolCount: number;
   createdAt: string;
   updatedAt: string;
-  creatorEmail: string;
   creatorId: string;
   creatorUsername: string | null;
   creatorDisplayName: string;
@@ -62,10 +61,14 @@ export default function PublicCollectionPage() {
     Promise.all([
       supabase.from('collections').select('*').eq('id', uuid).single(),
       supabase.from('collection_tools').select('tool_id').eq('collection_id', uuid),
-      supabase.rpc('get_creator_email', { collection_id: uuid }),
+      // get_creator_email is deliberately NOT fetched here. It returned the
+      // owner's address to anyone, which was finding #10, and migration
+      // 20261010045241 restricts it to the owner and staff. The value was only
+      // ever stored on the `col` object and never rendered, so dropping the
+      // call loses nothing and stops this firing on every page load.
       supabase.from('collection_followers').select('id', { count: 'exact', head: true }).eq('collection_id', uuid),
       user ? supabase.from('collection_followers').select('id').eq('user_id', user.id).eq('collection_id', uuid).maybeSingle() : Promise.resolve({ data: null }),
-    ]).then(async ([colRes, ctRes, emailRes, countRes, myFollowRes]) => {
+    ]).then(async ([colRes, ctRes, countRes, myFollowRes]) => {
       if (colRes.error || !colRes.data) {
         setError('Collection not found.');
         setLoading(false);
@@ -99,7 +102,6 @@ export default function PublicCollectionPage() {
           toolCount: 0,
           createdAt: data.created_at as string,
           updatedAt: data.updated_at as string,
-          creatorEmail: (emailRes.data as string) ?? 'Unknown',
           creatorId,
           creatorUsername,
           creatorDisplayName,
@@ -187,7 +189,6 @@ export default function PublicCollectionPage() {
           toolCount: toolIds.length,
           createdAt: data.created_at as string,
           updatedAt: data.updated_at as string,
-          creatorEmail: (emailRes.data as string) ?? 'Unknown',
           creatorId,
           creatorUsername,
           creatorDisplayName,
@@ -215,9 +216,11 @@ export default function PublicCollectionPage() {
   const handleClone = async () => {
     if (!user || !uuid || cloning) return;
     setCloning(true);
+    // No target_user_id: the RPC derives the owner from the session. It used
+    // to accept an owner parameter, so anyone could create collections in
+    // another user's account.
     const { error: err } = await supabase.rpc('clone_public_collection', {
-      source_collection_id: uuid,
-      target_user_id: user.id,
+      p_source_collection_id: uuid,
     });
     if (err) { setCloning(false); return; }
     setCloneDone(true);

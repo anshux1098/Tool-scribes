@@ -76,6 +76,7 @@ mirrored as files in `supabase/migrations/`.
 | 56 | 20261009192643 | atomic_upvote_toggle | ✅ |
 | 57 | 20261009192844 | resync_tool_upvotes | ✅ |
 | 58 | 20261009193102 | fix_toggle_upvote_zero_row | ✅ |
+| 59 | 20261010045241 | harden_clone_and_email | ✅ |
 
 ### Notes on 52–58
 
@@ -113,6 +114,18 @@ mirrored as files in `supabase/migrations/`.
   `if v_deleted = 0` was falsy and the INSERT never ran — upvotes could only be
   removed, never added. Replaced with `get diagnostics … row_count`.
   **Caught by probing the function against real data, not by reading it.**
+- **20261010045241** fixes #8 and #10 together.
+  `clone_public_collection(source_collection_id, target_user_id)` took the
+  owner as a parameter with no `auth.uid()` check, so any caller could create
+  collections in someone else's account. The new one-argument form derives the
+  owner from the session; the two-argument form remains as a wrapper that
+  ignores `target_user_id`, so un-migrated callers fail safe instead of
+  erroring.
+  `get_creator_email` / `get_submitter_email` read `auth.users.email` with no
+  authorization check and were executable by `anon`. Each now requires a
+  session and restricts the read to the owner or staff — `REVOKE` alone would
+  not have sufficed, since as `SECURITY DEFINER` they were equally reachable by
+  any authenticated caller.
 
 > Lesson worth keeping: a column-level `REVOKE` is a silent no-op if any
 > table-level `GRANT UPDATE` survives. Check

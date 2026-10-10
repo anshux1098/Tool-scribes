@@ -65,15 +65,8 @@ scopes, so `execute_sql` fails with 403 "after trying upscoping".
   than incremented, so it cannot go negative or drift. Client migrated.
   Counter drift that had already accumulated was resynced by
   `20261009192844` (4 tools were undercounted).
-- `clone_public_collection()` accepts `target_user_id` as a parameter and does
-  not verify it equals `auth.uid()` — a user can create collections owned by
-  someone else. **Unfixed.** (Confirmed still open by the Supabase security
-  advisor: callable by `anon`.)
 - 24 routines have a mutable `search_path` (advisor `function_search_path_mutable`).
   Fixing requires schema-qualifying all table references first.
-- `get_creator_email()` / `get_submitter_email()` are `SECURITY DEFINER` with no
-  authorization check and are callable by `anon` — email enumeration.
-  **Unfixed.** (Confirmed still open by the advisor.)
 - `calculate_reputation(target_user_id)`, `delete_my_account()`,
   `approve_submission()`, `reject_submission()`, `handle_new_user()`,
   `vote_alternative()`, `unvote_alternative()`, `get_submissions_for_review()`
@@ -101,6 +94,14 @@ scopes, so `execute_sql` fails with 403 "after trying upscoping".
   `best_for, gotcha, free_tier, rating, updated_at`. `anon` has no UPDATE at
   all (its only UPDATE policies are unsatisfiable without a session anyway).
   `INSERT`/`DELETE` are unchanged.
+- `clone_public_collection()` no longer takes an owner. The one-argument form
+  derives it from `auth.uid()`; the two-argument form is a deprecated wrapper
+  that **ignores** `target_user_id`, so an un-migrated caller gets its own
+  collection instead of someone else's (`20261010045241`).
+- `get_creator_email()` / `get_submitter_email()` now require a session **and**
+  restrict the read to the owner or a moderator/admin (`20261010045241`).
+  `REVOKE FROM anon` alone would not have been enough — as `SECURITY DEFINER`
+  they were reachable by any authenticated caller too.
 - `tools` UPDATE is likewise column-scoped (`20261009192135`): clients may write
   only `screenshot_url, ai_summary, ai_profile_generated_at, ai_profile_version`.
   The tool **author** could previously PATCH `upvotes`, `added_by`, `id` and

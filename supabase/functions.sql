@@ -7,6 +7,19 @@
 -- (27 total), exactly as deployed on 2026-10-09, emitted verbatim from
 -- pg_get_functiondef().
 --
+-- ─── clone_public_collection(uuid) / (uuid, uuid) ─────────────────────────────
+-- HARDENED in migration 20261010045241 (#8). The owner used to be a PARAMETER
+-- with no auth.uid() comparison, so any caller could create collections owned
+-- by someone else. The one-argument form derives the owner from the session.
+-- The two-argument form is a deprecated wrapper that IGNORES target_user_id,
+-- so an un-migrated caller gets its own collection instead of someone else's.
+
+-- ─── get_creator_email(uuid) / get_submitter_email(uuid) ──────────────────────
+-- HARDENED in migration 20261010045241 (#10). Both read auth.users.email with
+-- no authorization check and were callable by anon, so every user's address was
+-- enumerable by iterating UUIDs. Each now requires a session and restricts the
+-- read to the owner (or a moderator/admin).
+
 -- 2026-10-09: appended moderate_review, check_rate_limit,
 -- prune_rate_limit_counters and toggle_upvote (migrations 20261009135041 /
 -- 20261009135051 / 20261009192643). All four are SECURITY DEFINER.
@@ -114,37 +127,64 @@ end;
 $function$;
 
 -- ─── clone_public_collection(uuid, uuid) ────────────────────────────────────
--- SECURITY RISK: takes the OWNER (target_user_id) as a parameter and only
--- validates that the source collection is public. Any authenticated user can
--- therefore create a collection owned by someone else. Needs a
--- `target_user_id = auth.uid()` guard. NOT YET FIXED.
+-- SUPERSEDED by the one-argument clone_public_collection(p_source_collection_id)
+-- in migration 20261010045241. This signature is now a wrapper that ignores
+-- target_user_id entirely. The original body, which inserted a collection owned
+-- by whatever id the caller passed, is preserved in that migration's history.
 
-CREATE OR REPLACE FUNCTION public.clone_public_collection(source_collection_id uuid, target_user_id uuid)
+CREATE OR REPLACE FUNCTION public.clone_public_collection(
+  source_collection_id uuid,
+  target_user_id uuid
+)
+ RETURNS uuid
+ LANGUAGE sql
+ SECURITY DEFINER
+ SET search_path = public, pg_temp
+AS $function$
+  select public.clone_public_collection(source_collection_id);
+$function$;
+
+-- ─── clone_public_collection(p_source_collection_id) ─────────────────────────
+-- Clones a public collection into the CALLER's account. Owner comes from
+-- auth.uid(); there is no owner parameter. Cloning increments clone_count on
+-- the source, which is what usePublicCollections sorts on.
+
+CREATE OR REPLACE FUNCTION public.clone_public_collection(p_source_collection_id uuid)
  RETURNS uuid
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path = public, pg_temp
 AS $function$
 declare
-  new_collection_id uuid;
+  v_uid uuid := auth.uid();
+  v_new_collection_id uuid;
 begin
-  if not exists (select 1 from collections where id = source_collection_id and is_public = true) then
+  if v_uid is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  if not exists (
+    select 1 from collections
+     where id = p_source_collection_id and is_public = true
+  ) then
     raise exception 'Collection not found or is not public';
   end if;
 
   insert into collections (user_id, name, description, is_public, cover_image_url)
-  select target_user_id, name || ' (copy)', description, false, cover_image_url
-  from collections
-  where id = source_collection_id
-  returning id into new_collection_id;
+  select v_uid, name || ' (copy)', description, false, cover_image_url
+    from collections
+   where id = p_source_collection_id
+  returning id into v_new_collection_id;
 
   insert into collection_tools (collection_id, tool_id)
-  select new_collection_id, tool_id
-  from collection_tools
-  where collection_id = source_collection_id;
+  select v_new_collection_id, tool_id
+    from collection_tools
+   where collection_id = p_source_collection_id;
 
-  update collections set clone_count = clone_count + 1 where id = source_collection_id;
+  update collections set clone_count = clone_count + 1
+   where id = p_source_collection_id;
 
-  return new_collection_id;
+  return v_new_collection_id;
 end;
 $function$;
 
@@ -286,29 +326,42 @@ end;
 $function$;
 
 -- ─── get_creator_email(collection_id uuid) ──────────────────────────────────
--- Returns the collection owner's email to any AUTHENTICATED user when the
--- collection is public. By design (the "message the curator" flow).
+-- HARDENED in migration 20261010045241 (#10).
+--
+-- Was: any authenticated user could read any public collection owner's email,
+-- and anon could too -- the only check was `auth.role() <> 'anon'`. Iterating
+-- collection UUIDs enumerated every user's address.
+--
+-- Now: requires a session, and restricts the read to the collection owner or
+-- a moderator/admin. Note this is stricter than the old "public collection =>
+-- anyone can see the curator's email" intent. PublicCollectionPage.tsx fetched
+-- it on every load but only ever displayed it as a contact affordance.
 
 CREATE OR REPLACE FUNCTION public.get_creator_email(collection_id uuid)
  RETURNS text
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
+ SET search_path = public, pg_temp
 AS $function$
 DECLARE
+  v_uid uuid := auth.uid();
+  v_owner uuid;
   v_email text;
-  v_is_public boolean;
 BEGIN
-  IF auth.role() = 'anon' THEN
-    RAISE EXCEPTION 'Authentication required';
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
   END IF;
 
-  SELECT is_public INTO v_is_public FROM collections WHERE id = collection_id;
-  IF v_is_public IS DISTINCT FROM true THEN
-    RAISE EXCEPTION 'Collection not found or not public';
+  SELECT user_id INTO v_owner FROM collections WHERE id = collection_id;
+  IF v_owner IS NULL THEN
+    RAISE EXCEPTION 'No such collection';
   END IF;
 
-  SELECT email INTO v_email FROM auth.users
-    WHERE id = (SELECT user_id FROM collections WHERE collections.id = collection_id);
+  IF v_owner <> v_uid AND NOT (is_moderator() OR is_admin()) THEN
+    RAISE EXCEPTION 'Not authorized';
+  END IF;
+
+  SELECT email INTO v_email FROM auth.users WHERE id = v_owner;
 
   RETURN v_email;
 END;
@@ -390,23 +443,33 @@ END;
 $function$;
 
 -- ─── get_submitter_email(submission_id uuid) ────────────────────────────────
--- Correctly gated: submitter themselves, or an admin/moderator.
+-- HARDENED in migration 20261010045241 (#10). The authorization check was
+-- already correct (submitter themselves, or admin/moderator), but EXECUTE was
+-- never revoked from anon, so the advisor flagged it and the check relied on
+-- `auth.role() = 'anon'` rather than a missing session. Now revoked from
+-- anon, and the role check is expressed via is_moderator()/is_admin().
 
 CREATE OR REPLACE FUNCTION public.get_submitter_email(submission_id uuid)
  RETURNS text
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
+ SET search_path = public, pg_temp
 AS $function$
 DECLARE
+  v_uid uuid := auth.uid();
   v_email text;
   v_submitted_by uuid;
 BEGIN
-  IF auth.role() = 'anon' THEN
-    RAISE EXCEPTION 'Authentication required';
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
   END IF;
 
   SELECT submitted_by INTO v_submitted_by FROM tool_submissions WHERE id = submission_id;
-  IF v_submitted_by IS DISTINCT FROM auth.uid() AND NOT EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role IN ('admin','moderator')) THEN
+  IF v_submitted_by IS NULL THEN
+    RAISE EXCEPTION 'No such submission';
+  END IF;
+
+  IF v_submitted_by <> v_uid AND NOT (is_moderator() OR is_admin()) THEN
     RAISE EXCEPTION 'Not authorized';
   END IF;
 
