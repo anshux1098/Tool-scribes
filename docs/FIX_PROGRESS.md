@@ -15,11 +15,12 @@
 
 | | |
 |---|---|
-| Critical findings | **24 total → 12 fixed** (#1–#10, #14, #16) |
+| Critical findings | **24 total → 15 fixed** (#1–#10, #12–#16) |
 | Migrations applied to production | **9** (`…135041` … `…091402`) |
+| Tests | **52 passing** (up from 17 — 35 added this session) |
 | TypeScript errors | **126 → 0** (`tsc -b` exits 0) |
 | **Blocking issue** | **None.** `moderate_review()` and the rate limiter now exist in production |
-| Next up | **#11** PostgREST filter injection (search + edge functions) |
+| Next up | **#18** CSP kills all JSON-LD |
 
 The earlier "BLOCKED — migration not applied" section below is **resolved**;
 see the #5 entry. Read that entry before touching `reviews` again: the first
@@ -423,21 +424,119 @@ on first sign-in (`useProfile.ts:106`).
 
 ---
 
-## 📋 Next up — CRITICAL #11
+---
 
-### #11 — PostgREST filter injection, two sites
+## ✅ CRITICAL #11 — PostgREST filter injection
 
-- `src/lib/search/simple-engine.ts:18-19` interpolates each search token into
-  `name.ilike.%${safe}%` and joins with `,`. `escapeLike` (`:7-9`) escapes `%`,
-  `_`, `\` — the SQL `LIKE` grammar — but **not** the PostgREST filter grammar.
-  So `q,category.eq.dev` injects an equality condition via `.or()` (`:49`, `:70`,
-  `:95`).
-- `supabase/functions/generate-ai-profile/index.ts:84, :199, :212` interpolates
-  `toolId` straight into `?id=eq.${toolId}` with no UUID validation and no
-  `encodeURIComponent`. The catalog path in `ask-toolscribe/index.ts:108` does
-  not interpolate — that is the pattern to copy.
+Two sites, both fixed. No migration needed.
 
-Both are input validation, no migration needed.
+### Search engine (`simple-engine.ts`)
+
+`escapeLike` escaped `%`, `_`, `\` — that is the **SQL `LIKE`** grammar, a
+different language from the **PostgREST filter** grammar that `.or()` parses. A
+comma or dot in a search token therefore became a new filter condition:
+searching `x,category.eq.dev` used to return rows where `category = 'dev'`.
+
+Added `stripFilterGrammar`, which drops `, . ( ) * " \`. Dropping rather than
+escaping is deliberate: these characters have no meaning in a search term, so
+the user still gets results for the letters they typed and there is no grammar
+left to escape.
+
+Two follow-on details:
+- A token made **entirely** of grammar now yields no clause. `name.ilike.%%`
+  would match every row, so the token is skipped instead.
+- `hasQuery` is derived from the built clause, not from `filters.query.trim()`.
+  Previously a query of `",,,"` passed the guard and produced an empty `.or()`
+  argument, which is a malformed request rather than "no results".
+
+### Edge function (`generate-ai-profile`)
+
+`toolId` is interpolated into `?id=eq.${toolId}` on a **service-role** request,
+which bypasses RLS entirely. A comma or paren in the value rewrites the filter.
+Now validated by `isUuid` (RFC 4122 shape) and rejected with 400 — validating
+the shape removes the grammar before the URL is ever built, which is stronger
+than encoding it.
+
+### 18 new tests, and two real bugs they caught
+
+`src/test/search-filter.test.ts` (18) and `src/test/edge-url-guards.test.ts`
+(17) — the latter mirrors the edge guards, since Deno is unavailable under
+vitest and duplicating the function into the app bundle would ship dead code.
+
+**Writing the tests found two bugs I would not have caught by reading:**
+- `hostname === 'localhost'` never matched `api.localhost`. Whatwg/URL does
+  **not** strip the localhost domain, so subdomain forms walked straight
+  through. Now checks `.localhost` and `.local` suffixes.
+- `[::ffff:169.254.169.254]` was **normalised to `::ffff:a9fe:a9fe`** before the
+  guard saw it, so the dotted-quad regex for IPv4-mapped addresses could never
+  match. `isPrivateV6` now converts the last two hex groups back to a quad.
+
+---
+
+## ✅ CRITICAL #12 — the SSRF guard was decorative
+
+`isValidPublicUrl` matched only dotted-quad IPv4, and `fetch` followed redirects
+by default. Four holes, all closed:
+
+| bypass | why it worked |
+|---|---|
+| `http://[::1]/`, `[fc00::1]`, `[fe80::1]` | no IPv6 handling at all |
+| `http://[::ffff:169.254.169.254]/` | URL normalises this to hex before the guard runs |
+| `http://api.localhost/`, `http://db.local/` | `hostname === 'localhost'` doesn't match a subdomain |
+| `100.64.0.0/10`, `192.0.0.0/24` | not in the original range list |
+
+The redirect hole was the significant one: **a host that passes the check can
+still reach `169.254.169.254`** by 302-ing there. `fetch` now uses
+`redirect: "manual"`, and the handler resolves the `Location` itself and
+re-runs the full check against it. The redirect test asserts the public ranges
+adjacent to private ones are **not** over-blocked (`172.15`, `172.32`,
+`100.63`, `11.0.0.1`) — an SSRF guard that rejects half the internet gets
+turned off.
+
+---
+
+## ✅ CRITICAL #13 — prompt injection via `toolContext`
+
+`ask-toolscribe` interpolated caller-supplied `name`, `description`, `tags`,
+`features` and `reviewsSummary` straight into the **user** message, and never
+verified the tool exists — the non-ctx branch fetches the catalog, the ctx
+branch trusted the client.
+
+- Tool details are now fenced in `<tool_data>…</tool_data>` with an explicit
+  statement that the contents are data, not instructions.
+- The system prompt states that text resembling an instruction must be reported
+  back as suspicious rather than obeyed.
+- Newlines are collapsed by `clip()`, so injected text cannot fake a section
+  header or close the fence.
+- **Deliberately not** done: fetching the real tool from the catalog to replace
+  the client's copy. The ctx branch exists to answer about a tool being viewed,
+  and a round-trip per request would cost more than it is worth here. The
+  injection is contained, not removed.
+
+---
+
+## ✅ CRITICAL #15 — no input size limit
+
+Every string forwarded to a paid endpoint is now bounded: `query` 2000 chars
+(rejected with 400 above that), `description` 1200, `reviewsSummary` 1200,
+`features` 600, `tags` 300, `name` 120, `category` 60. `tags` and `features`
+are capped at 20 items each with per-item limits. Previously an unbounded array
+of strings went straight to a 4096-output-token call.
+
+## 📋 Next up — CRITICAL #18, #19, #20, #21
+
+All configuration, no migrations:
+
+- **#18** `index.html:24` sets `script-src 'self'` with no nonce, which blocks
+  every `<script type="application/ld+json">` Helmet emits. Zero rich results.
+- **#19** `frame-ancestors 'none'` inside a `<meta http-equiv>` CSP is ignored
+  by every browser, as is `<meta http-equiv="X-Frame-Options">`. The file looks
+  protected and provides no defense. Real headers belong in `vercel.json`.
+- **#20** `vite.config.ts` sets `drop_console: true`, removing `console.error`
+  as well as `console.log` — including `ErrorBoundary.tsx:20`, the app's only
+  global error sink.
+- **#21** `playwright.config.ts` imports `lovable-agent-playwright-config`,
+  which is in neither `package.json` nor the lockfile. No CI exists either.
 | 9 | `reputation_score` self-assignable | ✅ | `useProfile.ts:157-167` types update as `Record<string, unknown>`; narrow to a `ProfileUpdate` type + revoke the column |
 | 10 | Email enumeration | ✅ | `get_creator_email` / `get_submitter_email` (`functions.sql:284, :390`) — `SECURITY DEFINER`, no authz, no `REVOKE FROM anon` |
 

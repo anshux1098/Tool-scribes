@@ -4,16 +4,35 @@ import type { SearchEngine } from './engine';
 import type { SearchFilters, SearchGroupedResults } from './types';
 import { hashId } from '@/lib/hashId';
 
-function escapeLike(val: string): string {
+export function escapeLike(val: string): string {
   return val.replace(/[%_\\]/g, '\\$&');
 }
 
-function buildTokenizedOrClause(query: string, prefix?: string): string {
+/**
+ * Strip PostgREST filter grammar from a search token.
+ *
+ * The `.or()` clause is a comma-separated list of `column.op.value` filters, so
+ * a token containing `,` `.` `(` `)` `*` or `"` is parsed as extra filters
+ * rather than as text. escapeLike above only handles the SQL LIKE grammar
+ * (`%` `_` `\`), which is a different language — searching for
+ * `,category.eq.dev` used to inject an equality condition on `category`.
+ *
+ * These characters have no meaning in a search term, so dropping them is
+ * preferable to escaping: the user still gets results for the letters they
+ * typed, and there is no grammar left to escape.
+ */
+export function stripFilterGrammar(val: string): string {
+  return val.replace(/[,().*"\\]/g, '').trim();
+}
+
+export function buildTokenizedOrClause(query: string, prefix?: string): string {
   const tokens = query.trim().split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return '';
   const p = prefix ? prefix + '.' : '';
   const clauses: string[] = [];
-  for (const token of tokens) {
+  for (const raw of tokens) {
+    const token = stripFilterGrammar(raw);
+    if (!token) continue;
     const safe = escapeLike(token);
     clauses.push(`${p}name.ilike.%${safe}%`);
     clauses.push(`${p}description.ilike.%${safe}%`);
@@ -45,9 +64,12 @@ export class SimpleSearchEngine implements SearchEngine {
 
     const results: SearchGroupedResults = { vault: [], community: [], collections: [], total: 0 };
     const user = (await supabase.auth.getSession()).data.session?.user ?? null;
-    const hasQuery = filters.query.trim().length > 0;
-    const orClause = hasQuery ? buildTokenizedOrClause(filters.query) : '';
-    const orClauseTools = hasQuery ? buildTokenizedOrClause(filters.query, 'tools') : '';
+    const orClause = buildTokenizedOrClause(filters.query);
+    const orClauseTools = buildTokenizedOrClause(filters.query, 'tools');
+    // Derived from the built clause, not from filters.query: a query made up
+    // entirely of filter grammar ("(,.*") strips down to nothing, and passing
+    // an empty string to .or() is a malformed request rather than no results.
+    const hasQuery = orClause.length > 0;
 
     try {
       if (hasQuery && user) {
