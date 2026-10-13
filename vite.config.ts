@@ -22,8 +22,16 @@ export default defineConfig({
     minify: "terser",
     terserOptions: {
       compress: {
-        drop_console: true,
+        // #20: `drop_console: true` removed console.error and console.warn as
+        // well as console.log, which silently deleted ErrorBoundary.tsx — the
+        // app's only global error sink — and every other diagnostics site.
+        // Production crashes were unobservable. Keep errors and warnings, drop
+        // the noise.
+        drop_console: ["log", "debug", "info"],
         drop_debugger: true,
+        // Preserve function names so production stack traces from
+        // ErrorBoundary are readable.
+        keep_fnames: true,
       },
     },
     rollupOptions: {

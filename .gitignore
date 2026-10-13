@@ -42,3 +42,10 @@ opencode.jsonc
 # NOTE: .env.example used to be ignored here, which meant the onboarding
 # template src/main.tsx points users to was never committed. It is tracked
 # again -- keep it that way, it holds no real credentials.
+
+# Playwright output
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+

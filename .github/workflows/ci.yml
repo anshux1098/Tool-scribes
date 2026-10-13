@@ -1,0 +1,97 @@
+# #21: there was no CI at all, so nothing ran typecheck, lint, tests or a
+# build on push. That is what let 126 TypeScript errors and an unrunnable
+# Playwright config ship unnoticed -- `package.json` build was `vite build`
+# with no `tsc -b`, and playwright.config.ts imported a package that was in
+# neither package.json nor the lockfile.
+#
+# This workflow is the thing that stops the review list regrowing. It is
+# deliberately strict and runs typecheck and lint as hard gates, not warnings.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref. Keeps the required-check from
+# reporting on a commit nobody cares about any more.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: typecheck, lint, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Runs before lint and tests so a type regression fails fast.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      # `npm run build` is `tsc -b && vite build`, so this also proves the
+      # production bundle builds, not just that it typechecks.
+      - name: Build
+        run: npm run build
+
+  e2e:
+    name: playwright smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: verify
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      # The smoke specs are anonymous by design (see playwright-fixture.ts), so
+      # no Supabase secrets are needed and nothing is written to production.
+      #
+      # `vite preview` serves the real production build rather than the dev
+      # server, which means this job exercises the bundle that actually ships
+      # -- including whether the tightened CSP blocks anything. It needs no
+      # secrets. If you add authenticated specs later, inject credentials via
+      # repository secrets rather than committing them.
+      - name: Build
+        run: npm run build
+
+      - name: E2E smoke tests
+        run: npm run test:e2e
+        env:
+          E2E_BASE_URL: http://localhost:4173
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

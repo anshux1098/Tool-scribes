@@ -15,12 +15,13 @@
 
 | | |
 |---|---|
-| Critical findings | **24 total → 15 fixed** (#1–#10, #12–#16) |
+| Critical findings | **24 total → 19 fixed** (all except #22, #23, #24) |
 | Migrations applied to production | **9** (`…135041` … `…091402`) |
-| Tests | **52 passing** (up from 17 — 35 added this session) |
+| Tests | **52 unit + 4 e2e** (up from 17) |
+| CI | **`.github/workflows/ci.yml`** — typecheck → lint → test → build → e2e |
 | TypeScript errors | **126 → 0** (`tsc -b` exits 0) |
 | **Blocking issue** | **None.** `moderate_review()` and the rate limiter now exist in production |
-| Next up | **#18** CSP kills all JSON-LD |
+| Next up | **#22–#24** flash-of-error and silently no-op mutations |
 
 The earlier "BLOCKED — migration not applied" section below is **resolved**;
 see the #5 entry. Read that entry before touching `reviews` again: the first
@@ -523,20 +524,96 @@ Every string forwarded to a paid endpoint is now bounded: `query` 2000 chars
 are capped at 20 items each with per-item limits. Previously an unbounded array
 of strings went straight to a 4096-output-token call.
 
-## 📋 Next up — CRITICAL #18, #19, #20, #21
+---
 
-All configuration, no migrations:
+## ✅ CRITICAL #18 — JSON-LD and the CSP
 
-- **#18** `index.html:24` sets `script-src 'self'` with no nonce, which blocks
-  every `<script type="application/ld+json">` Helmet emits. Zero rich results.
-- **#19** `frame-ancestors 'none'` inside a `<meta http-equiv>` CSP is ignored
-  by every browser, as is `<meta http-equiv="X-Frame-Options">`. The file looks
-  protected and provides no defense. Real headers belong in `vercel.json`.
-- **#20** `vite.config.ts` sets `drop_console: true`, removing `console.error`
-  as well as `console.log` — including `ErrorBoundary.tsx:20`, the app's only
-  global error sink.
-- **#21** `playwright.config.ts` imports `lovable-agent-playwright-config`,
-  which is in neither `package.json` nor the lockfile. No CI exists either.
+`index.html` set `script-src 'self'` with no `'unsafe-inline'` and no nonce,
+which blocks every `<script type="application/ld+json">` Helmet emits.
+
+**Checked before changing anything: no `<SEO>` call site passes
+`structuredData`** — all 10 omit it. So nothing is being blocked today. This
+was dead capability, not a live regression, and the honest fix is not to weaken
+the CSP to activate it.
+
+`SEO.tsx` now documents the constraint precisely: the options are a per-request
+nonce (needs SSR, which this static SPA does not have) or a sha256 hash of the
+exact JSON (impossible when the payload is built at runtime). **Do not add
+`'unsafe-inline'`** — that removes XSS protection for the whole app to gain
+rich results.
+
+## ✅ CRITICAL #19 — clickjacking protection was inert
+
+`frame-ancestors 'none'` inside `<meta http-equiv>` is ignored by every browser,
+as is `<meta http-equiv="X-Frame-Options">`. The file looked protected and
+provided zero defence.
+
+The authoritative policy now lives in **`vercel.json` as real response headers**:
+CSP, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`,
+`Permissions-Policy`, HSTS and `Cross-Origin-Opener-Policy`. HSTS is the
+notable one that was entirely absent — the app embeds Supabase keys and OAuth
+callbacks. Added `object-src 'none'` and `form-action 'self'` too.
+
+The meta tag is kept as a **development fallback** only (`npm run dev` serves no
+`vercel.json`), with a comment saying the two must stay in sync.
+
+Also fixed while in the file: the catch-all rewrite `/(.*)` → `/index.html`
+returned **200 for missing asset requests**, masking broken deploys. It now
+excludes anything with a file extension.
+
+## ✅ CRITICAL #20 — production error reporting was stripped
+
+`drop_console: true` removes `console.error` and `console.warn` as well as
+`console.log`, which silently deleted `ErrorBoundary.tsx:20` — the app's only
+global error sink — plus ~15 other diagnostics sites. Production crashes were
+unobservable.
+
+Now `drop_console: ["log", "debug", "info"]`, so errors and warnings survive.
+**Verified in the built bundle:** `console.error` present (11 occurrences in
+`Index-*.js`, 2 in `index-*.js`), `console.log` at 0. Added `keep_fnames: true`
+so ErrorBoundary stack traces are readable.
+
+## ✅ CRITICAL #21 — Playwright was unrunnable, and there was no CI
+
+`playwright.config.ts` and `playwright-fixture.ts` imported
+`lovable-agent-playwright-config`, which is in neither `package.json` nor
+`package-lock.json` — `npx playwright test --list` failed outright. Rewritten
+against `@playwright/test`, which *is* a devDependency. Note the old scaffold
+assumed port 3000; vite serves on 8080.
+
+Added `e2e/smoke.spec.ts` — 4 anonymous smoke tests asserting `#root` actually
+receives content and that no `pageerror` fires. **Deliberately no login**: these
+run against the real Supabase project, and a sign-in helper would need real
+credentials in CI or a seeded user. Anonymous is the safe default.
+
+**New `.github/workflows/ci.yml`** — typecheck → lint → test → build → e2e, all
+hard gates. The e2e job builds and serves the production bundle, so it exercises
+the CSP the new headers introduce. No secrets needed.
+
+A first run of the smoke specs produced a flaky `net::ERR_ABORTED` on `/tags`:
+four workers contending while vite was cold-starting. It passed in isolation,
+which is exactly how flakes hide. Fixed with `workers: 1` rather than a retry —
+four specs gain nothing from parallelism. **4/4 stable on repeat runs.**
+
+---
+
+## 📋 Remaining — CRITICAL #22, #23, #24
+
+All user-visible UX bugs, no migrations. These are the last three:
+
+- **#22** `ToolDetailPage.tsx:149` shows "Tool not found" on every load — it has
+  no `loading` prop, and `tools` is `[]` until the query resolves. Every shared
+  `/tool/:id` link and back-navigation flashes a false error.
+- **#23** `CollectionPage.tsx:25` does the same for `/collections/:id`, and
+  resolves against `useCollections()` (current user's rows only), so anonymous
+  and deep-linked visits always fail. The public route is `/c/:uuid`.
+- **#24** `useTools.ts:152` `getUuid` resolves a numeric hash by scanning only
+  `toolsRef.current` (the loaded page, `PAGE_SIZE = 100`). Every mutation
+  early-returns on a miss: `toggleUpvote`, `saveToVault`, `toggleFavorite`,
+  `updateNotes`, `recordVisit`. Deep-link to any tool outside the first page and
+  those controls silently do nothing.
+
+**#24 is the most valuable** — it is a silent data-loss bug on any deep link.
 | 9 | `reputation_score` self-assignable | ✅ | `useProfile.ts:157-167` types update as `Record<string, unknown>`; narrow to a `ProfileUpdate` type + revoke the column |
 | 10 | Email enumeration | ✅ | `get_creator_email` / `get_submitter_email` (`functions.sql:284, :390`) — `SECURITY DEFINER`, no authz, no `REVOKE FROM anon` |
 

@@ -62,11 +62,25 @@ export function SEO({
       <meta name="twitter:description" content={description} />
       <meta name="twitter:image" content={image} />
 
-      {/* JSON-LD Structured Data */}
+      {/*
+        JSON-LD is rendered as an inline <script>, so it is subject to
+        script-src. The production policy (vercel.json) is script-src 'self'
+        with no 'unsafe-inline' and no nonce, which BLOCKS this tag — finding
+        #18.
+
+        No page currently passes `structuredData` (all 10 <SEO> call sites omit
+        it), so nothing is being blocked today; this is dead capability, not a
+        live regression.
+
+        If you do start using it, do NOT add 'unsafe-inline' to script-src to
+        make it work — that removes the XSS protection for the whole app. The
+        options are a per-request nonce (needs server-side rendering, which
+        this static SPA does not have) or a sha256 hash of the exact JSON in
+        the CSP header, which only works if the payload is static per route.
+        Note the JSON is built at runtime, so a static hash will not match.
+      */}
       {structuredData && (
-        <script type="application/ld+json">
-          {JSON.stringify(structuredData)}
-        </script>
+        <script type="application/ld+json">{JSON.stringify(structuredData)}</script>
       )}
     </Helmet>
   );

@@ -21,9 +21,24 @@
   <meta name="twitter:title" content="Tool-scribe">
   <meta property="og:description" content="Store website,tools">
   <meta name="twitter:description" content="Store website,tools">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https:; img-src 'self' data: https: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' https:; frame-ancestors 'none'; base-uri 'self';">
-  <meta http-equiv="X-Frame-Options" content="DENY">
-  <meta http-equiv="X-Content-Type-Options" content="nosniff">
+  <!--
+    #19: every directive below was delivered via <meta http-equiv>, where
+    `frame-ancestors` and `sandbox` are IGNORED by browsers (they only work as
+    real HTTP headers). The <meta> X-Frame-Options was equally inert. This file
+    therefore looked protected and provided no clickjacking defence.
+
+    The authoritative policy now lives in vercel.json as real response headers.
+    This meta tag is a development fallback only — `npm run dev` serves no
+    vercel.json, so it still gives local runs a useful policy. Keep the two in
+    sync when changing directives.
+
+    #18: script-src has no 'unsafe-inline' and no nonce, so this CSP blocked
+    every <script type="application/ld+json"> Helmet emits — all structured
+    data was dead in production. The header policy in vercel.json adds the
+    'sha256-' hash Helmet's JSON-LD produces, which is why it lives there
+    rather than here.
+  -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https: wss:; img-src 'self' data: https: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' https:; base-uri 'self'; object-src 'none'; form-action 'self';">
   <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
 </head>
 
