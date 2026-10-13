@@ -15,10 +15,20 @@ interface CollectionPageProps {
   onToggleFavorite: (id: number) => void;
   onRemoveFromCollection: (collectionNumId: number, toolUuid: string) => void;
   onTogglePublic?: (id: number) => void;
+  /**
+   * True while the collection list is still loading.
+   *
+   * #23: `collections` comes from useCollections(), which only ever returns the
+   * CURRENT user's rows, and is `[]` until the query resolves. Without this the
+   * page rendered "Collection not found" on every deep link and for every
+   * logged-out visitor.
+   */
+  loading?: boolean;
 }
 
 export default function CollectionPage({
   tools, collections, onRename, onDelete, onToggleFavorite, onRemoveFromCollection, onTogglePublic,
+  loading,
 }: CollectionPageProps) {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -51,10 +61,25 @@ export default function CollectionPage({
     [tools, toolUuids]
   );
 
+  // #23: wait for the query before declaring the collection missing, otherwise
+  // every deep link flashes "Collection not found" before the data arrives.
+  if (!collection && loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 gap-3" aria-busy="true" aria-live="polite">
+        <div className="h-8 w-8 rounded-full border-2 border-tv-border border-t-tv-primary animate-spin" />
+        <p className="text-tv-text-s text-sm">Loading collection…</p>
+      </div>
+    );
+  }
+
   if (!collection) {
     return (
       <div className="flex flex-col items-center justify-center py-24">
         <h2 className="font-syne text-xl text-tv-text mb-2">Collection not found</h2>
+        <p className="text-tv-text-s text-sm mb-4 max-w-sm text-center">
+          This collection may be private, or it may belong to another account.
+          Public collections are browsable at <code className="font-mono">/c/&lt;id&gt;</code>.
+        </p>
         <button onClick={() => navigate('/')} className="text-tv-primary text-sm hover:underline">← Back to Vault</button>
       </div>
     );

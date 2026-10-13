@@ -50,6 +50,62 @@ function rowToTool(
 
 const PAGE_SIZE = 100;
 
+/**
+ * hash -> uuid index for tools that are not in the loaded page.
+ *
+ * `getUuid` used to scan only `toolsRef.current`, i.e. the paginated list. Every
+ * mutation early-returned on a miss, so deep-linking to any tool outside the
+ * first PAGE_SIZE rows made upvote / save / notes / visit silently do nothing --
+ * a quiet data-loss bug with no error and no UI feedback.
+ *
+ * This map is populated from every page that loads, and lazily filled from the
+ * full id list on the first miss. It is module-level so it survives navigation:
+ * once a deep link resolves, the mapping is warm for the rest of the session.
+ *
+ * On a hash collision the first id wins, which is the same rule the previous
+ * linear scan used (first match in list order). The 32-bit hash space makes
+ * collisions unlikely until ~10^5 tools; CODE_REVIEW.md flags this as a
+ * separate concern.
+ */
+let uuidIndex: Map<number, string> | null = null;
+let uuidIndexPromise: Promise<Map<number, string>> | null = null;
+
+async function loadUuidIndex(): Promise<Map<number, string>> {
+  const map = new Map<number, string>();
+  if (!isSupabaseConfigured) return map;
+  // Only ids are needed, so this stays small regardless of tool count.
+  const { data, error } = await supabase.from('tools').select('id');
+  if (error || !data) {
+    console.warn('[useTools] could not build tool id index', error);
+    return map;
+  }
+  for (const row of data) {
+    const uuid = (row as { id: string }).id;
+    const h = hashId(uuid);
+    if (!map.has(h)) map.set(h, uuid);
+  }
+  return map;
+}
+
+function ensureUuidIndex(): Promise<Map<number, string>> {
+  if (uuidIndex) return Promise.resolve(uuidIndex);
+  if (!uuidIndexPromise) {
+    uuidIndexPromise = loadUuidIndex()
+      .then((m) => {
+        uuidIndex = m;
+        return m;
+      })
+      .catch((e) => {
+        console.error('[useTools] uuid index load failed', e);
+        return new Map<number, string>();
+      })
+      .finally(() => {
+        uuidIndexPromise = null;
+      });
+  }
+  return uuidIndexPromise;
+}
+
 export function useTools() {
   const { user } = useAuth();
   const [tools, setTools] = useState<(Tool & { _uuid: string })[]>([]);
@@ -128,6 +184,12 @@ export function useTools() {
       const last = toolRows?.[toolRows.length - 1];
       setNextCursor(mapped.length === PAGE_SIZE && last ? (last.created_at as string) : null);
 
+      // Keep the hash -> uuid index warm so deep links to already-seen tools
+      // never need the full id query.
+      for (const t of mapped) {
+        if (uuidIndex) uuidIndex.set(t.id, t._uuid);
+      }
+
       if (cursor) {
         setTools(prev => [...prev, ...mapped]);
       } else {
@@ -152,6 +214,31 @@ export function useTools() {
   const getUuid = useCallback((numId: number): string | null => {
     return toolsRef.current.find(t => t.id === numId)?._uuid ?? null;
   }, []);
+
+  /**
+   * Resolve a numeric tool id to its UUID, falling back to the full id index.
+   * Always use this for mutations. `getUuid` alone only knows the loaded page.
+   */
+  const resolveUuid = useCallback(async (numId: number): Promise<string | null> => {
+    const loaded = getUuid(numId);
+    if (loaded) return loaded;
+    const index = await ensureUuidIndex();
+    return index.get(numId) ?? null;
+  }, [getUuid]);
+
+  /** Resolve, or warn loudly instead of returning null silently. */
+  const resolveUuidOrWarn = useCallback(async (
+    numId: number,
+    action: string
+  ): Promise<string | null> => {
+    const uuid = await resolveUuid(numId);
+    if (!uuid) {
+      // #24: every mutation used to early-return here with no signal, so a
+      // deep link to an unloaded tool looked broken but said nothing.
+      console.error(`[useTools] ${action}: no tool found for id ${numId}; the action was skipped`);
+    }
+    return uuid;
+  }, [resolveUuid]);
 
   const addTool = useCallback(async (tool: NewTool) => {
     if (!user) return;
@@ -206,7 +293,7 @@ export function useTools() {
   }, [user]);
 
   const toggleFavorite = useCallback(async (numId: number) => {
-    const uuid = getUuid(numId);
+    const uuid = await resolveUuidOrWarn(numId, 'toggleFavorite');
     if (!uuid || !user) return;
     const tool = toolsRef.current.find(t => t.id === numId);
     const newVal = !(tool?.isFavorite ?? false);
@@ -214,10 +301,10 @@ export function useTools() {
     const { error } = await supabase.from('vault_items')
       .upsert({ user_id: user.id, tool_id: uuid, is_favorite: newVal }, { onConflict: 'user_id,tool_id' });
     if (error) setTools(prev => prev.map(t => t.id === numId ? { ...t, isFavorite: !newVal } : t));
-  }, [user, getUuid]);
+  }, [user, resolveUuidOrWarn]);
 
   const toggleUpvote = useCallback(async (numId: number) => {
-    const uuid = getUuid(numId);
+    const uuid = await resolveUuidOrWarn(numId, 'toggleUpvote');
     if (!uuid || !user) return;
     const tool = toolsRef.current.find(t => t.id === numId);
     const wasUpvoted = tool?.upvotedByMe ?? false;
@@ -241,47 +328,47 @@ export function useTools() {
     // optimistic guess, which also repairs any pre-existing drift.
     const { upvoted, upvotes } = data[0] as { upvoted: boolean; upvotes: number };
     setTools(prev => prev.map(t => (t.id === numId ? { ...t, upvotedByMe: upvoted, upvotes } : t)));
-  }, [user, getUuid]);
+  }, [user, resolveUuidOrWarn]);
 
   const saveToVault = useCallback(async (numId: number) => {
-    const uuid = getUuid(numId);
+    const uuid = await resolveUuidOrWarn(numId, 'saveToVault');
     if (!uuid || !user) return;
     setTools(prev => prev.map(t => t.id === numId ? { ...t, savedToVault: true } : t));
     const { error } = await supabase.from('vault_items')
       .upsert({ user_id: user.id, tool_id: uuid }, { onConflict: 'user_id,tool_id' });
     if (error) setTools(prev => prev.map(t => t.id === numId ? { ...t, savedToVault: false } : t));
-  }, [user, getUuid]);
+  }, [user, resolveUuidOrWarn]);
 
   const updateNotes = useCallback(async (numId: number, notes: string) => {
-    const uuid = getUuid(numId);
+    const uuid = await resolveUuidOrWarn(numId, 'updateNotes');
     if (!uuid || !user) return;
     setTools(prev => prev.map(t => t.id === numId ? { ...t, notes } : t));
     await supabase.from('vault_items')
       .upsert({ user_id: user.id, tool_id: uuid, notes }, { onConflict: 'user_id,tool_id' });
-  }, [user, getUuid]);
+  }, [user, resolveUuidOrWarn]);
 
   const addTag = useCallback(async (numId: number, tag: string) => {
-    const uuid = getUuid(numId);
+    const uuid = await resolveUuidOrWarn(numId, 'addTag');
     if (!uuid || !user) return;
     const tool = toolsRef.current.find(t => t.id === numId);
     const newTags = [...new Set([...(tool?.tags ?? []), tag])];
     setTools(prev => prev.map(t => t.id === numId ? { ...t, tags: newTags } : t));
     await supabase.from('vault_items')
       .upsert({ user_id: user.id, tool_id: uuid, tags: newTags }, { onConflict: 'user_id,tool_id' });
-  }, [user, getUuid]);
+  }, [user, resolveUuidOrWarn]);
 
   const removeTag = useCallback(async (numId: number, tag: string) => {
-    const uuid = getUuid(numId);
+    const uuid = await resolveUuidOrWarn(numId, 'removeTag');
     if (!uuid || !user) return;
     const tool = toolsRef.current.find(t => t.id === numId);
     const newTags = (tool?.tags ?? []).filter(tg => tg !== tag);
     setTools(prev => prev.map(t => t.id === numId ? { ...t, tags: newTags } : t));
     await supabase.from('vault_items')
       .upsert({ user_id: user.id, tool_id: uuid, tags: newTags }, { onConflict: 'user_id,tool_id' });
-  }, [user, getUuid]);
+  }, [user, resolveUuidOrWarn]);
 
   const recordVisit = useCallback(async (numId: number) => {
-    const uuid = getUuid(numId);
+    const uuid = await resolveUuidOrWarn(numId, 'recordVisit');
     if (!uuid || !user) return;
     const now = new Date().toISOString();
     setTools(prev => prev.map(t =>
@@ -293,11 +380,12 @@ export function useTools() {
       .upsert({ user_id: user.id, tool_id: uuid, last_visited: now, visit_count: count }, { onConflict: 'user_id,tool_id' });
     // Clear from dust items if visited
     await supabase.from('dust_items').delete().eq('user_id', user.id).eq('tool_id', uuid);
-  }, [user, getUuid]);
+  }, [user, resolveUuidOrWarn]);
 
   const removeFromVault = useCallback(async (numId: number): Promise<{ error?: string }> => {
-    const uuid = getUuid(numId);
-    if (!uuid || !user) return { error: 'Not authenticated' };
+    if (!user) return { error: 'Not authenticated' };
+    const uuid = await resolveUuidOrWarn(numId, 'removeFromVault');
+    if (!uuid) return { error: 'Tool not found' };
     const tool = toolsRef.current.find(t => t.id === numId);
     if (!tool?.savedToVault) return {};
     setTools(prev => prev.map(t =>
@@ -311,17 +399,17 @@ export function useTools() {
       return { error: error.message };
     }
     return {};
-  }, [user, getUuid]);
+  }, [user, resolveUuidOrWarn]);
 
   const updateScreenshot = useCallback(async (numId: number, screenshotUrl: string): Promise<void> => {
-    const uuid = getUuid(numId);
+    const uuid = await resolveUuidOrWarn(numId, 'updateScreenshot');
     if (!uuid) return;
     setTools(prev => prev.map(t => t.id === numId ? { ...t, screenshotUrl } : t));
     await supabase.from('tools').update({ screenshot_url: screenshotUrl }).eq('id', uuid);
-  }, [getUuid]);
+  }, [resolveUuidOrWarn]);
 
   const updateAiProfile = useCallback(async (numId: number, summary: string): Promise<void> => {
-    const uuid = getUuid(numId);
+    const uuid = await resolveUuidOrWarn(numId, 'updateAiProfile');
     if (!uuid) return;
     const now = new Date().toISOString();
     const tool = tools.find(t => t.id === numId);
@@ -330,7 +418,7 @@ export function useTools() {
     setTools(prev => prev.map(t => t.id === numId ? { ...t, aiSummary: summary, aiProfileGeneratedAt: now, aiProfileVersion: newVersion } : t));
     await supabase.from('tools').update({ ai_summary: summary, ai_profile_generated_at: now, ai_profile_version: newVersion }).eq('id', uuid);
     console.log('[AI PROFILE] saved profile');
-  }, [getUuid, tools]);
+  }, [resolveUuidOrWarn, tools]);
 
   return {
     tools, loading, error, refetch: fetchAll,

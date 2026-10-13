@@ -19,7 +19,7 @@ export default function CollectionDetailWrapper() {
   const { user } = useAuth();
   const search = useSearch();
   const { tools, toggleFavorite } = useTools();
-  const { collections, renameCollection, deleteCollection, removeToolFromCollection, togglePublic } = useCollections();
+  const { collections, loading, renameCollection, deleteCollection, removeToolFromCollection, togglePublic } = useCollections();
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -59,6 +59,7 @@ export default function CollectionDetailWrapper() {
         onToggleFavorite={toggleFavorite}
         onRemoveFromCollection={handleRemoveFromCollection}
         onTogglePublic={togglePublic}
+        loading={loading}
       />
       <AddToolModal open={modalOpen} onClose={() => setModalOpen(false)} onAdd={() => {}} />
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />

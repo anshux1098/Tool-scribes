@@ -15,13 +15,13 @@
 
 | | |
 |---|---|
-| Critical findings | **24 total → 19 fixed** (all except #22, #23, #24) |
+| Critical findings | **24 / 24 fixed** |
 | Migrations applied to production | **9** (`…135041` … `…091402`) |
-| Tests | **52 unit + 4 e2e** (up from 17) |
+| Tests | **58 unit + 4 e2e** (up from 17) |
 | CI | **`.github/workflows/ci.yml`** — typecheck → lint → test → build → e2e |
 | TypeScript errors | **126 → 0** (`tsc -b` exits 0) |
-| **Blocking issue** | **None.** `moderate_review()` and the rate limiter now exist in production |
-| Next up | **#22–#24** flash-of-error and silently no-op mutations |
+| **Blocking issue** | **None.** `moderate_review()` and the rate limiter exist in production |
+| Next up | No criticals left. Remaining work is the HIGH/MEDIUM list in `CODE_REVIEW.md` |
 
 The earlier "BLOCKED — migration not applied" section below is **resolved**;
 see the #5 entry. Read that entry before touching `reviews` again: the first
@@ -597,23 +597,83 @@ four specs gain nothing from parallelism. **4/4 stable on repeat runs.**
 
 ---
 
-## 📋 Remaining — CRITICAL #22, #23, #24
+## ✅ CRITICAL #24 — mutations silently no-opped on deep links
 
-All user-visible UX bugs, no migrations. These are the last three:
+**The worst of the three**, because it was quiet data loss. `getUuid` resolved
+a numeric tool id to its UUID by scanning only `toolsRef.current` — the
+paginated list, `PAGE_SIZE = 100`. Every mutation early-returned on a miss, so
+deep-linking to any tool outside the first 100 rows made **upvote, save to
+vault, toggle favourite, notes, tags, record visit and remove from vault**
+silently do nothing. No error, no UI feedback, no indication anything happened.
 
-- **#22** `ToolDetailPage.tsx:149` shows "Tool not found" on every load — it has
-  no `loading` prop, and `tools` is `[]` until the query resolves. Every shared
-  `/tool/:id` link and back-navigation flashes a false error.
-- **#23** `CollectionPage.tsx:25` does the same for `/collections/:id`, and
-  resolves against `useCollections()` (current user's rows only), so anonymous
-  and deep-linked visits always fail. The public route is `/c/:uuid`.
-- **#24** `useTools.ts:152` `getUuid` resolves a numeric hash by scanning only
-  `toolsRef.current` (the loaded page, `PAGE_SIZE = 100`). Every mutation
-  early-returns on a miss: `toggleUpvote`, `saveToVault`, `toggleFavorite`,
-  `updateNotes`, `recordVisit`. Deep-link to any tool outside the first page and
-  those controls silently do nothing.
+Fixed with a **module-level hash → uuid index**:
 
-**#24 is the most valuable** — it is a silent data-loss bug on any deep link.
+- Warmed from every page that loads, so no cost on the common path.
+- Lazily filled on the first miss from `select('id')` only — ids alone, small
+  regardless of tool count.
+- **Module-level on purpose**, so it survives navigation: once a deep link
+  resolves, the mapping is warm for the rest of the session.
+- In-flight requests are de-duplicated, so concurrent mutations on a cold
+  session trigger one query, not ten.
+- A miss now logs `console.error` naming the action and the id, instead of
+  returning `null` in silence. `removeFromVault` returns
+  `{ error: 'Tool not found' }` rather than reporting success.
+
+All ten mutation call sites moved to `resolveUuidOrWarn`. On a hash collision
+the first id wins — the same rule the old linear scan used.
+
+`src/test/tool-uuid-index.test.ts` (5 tests) pins the properties this depends
+on: stability across calls, no collisions across a realistic sample, and
+explicitly that an id **never in the loaded page** still resolves — which is
+the #24 scenario itself.
+
+## ✅ CRITICAL #22 — "Tool not found" flashed on every load
+
+`ToolDetailPage` bailed on `!tool`, and `tools` is `[]` until the query
+resolves, so every shared `/tool/:id` link and back-navigation showed a false
+error screen before the real content.
+
+The page now takes a `loading` prop (threaded from `useTools` via
+`ToolDetailWrapper`) and renders a spinner while the query is in flight. Only a
+genuine miss renders "Tool not found".
+
+## ✅ CRITICAL #23 — "Collection not found" flashed, and was owner-only
+
+Same flash, plus a worse problem: `collections` comes from `useCollections()`,
+which returns **only the current user's rows**, so anonymous and deep-linked
+visitors always failed. The public route is `/c/:uuid`.
+
+Added the same `loading` gate, and made the error state honest: it now explains
+that the collection may be private or belong to another account and points at
+the public route, instead of implying it does not exist.
+
+---
+
+## 📌 All 24 critical findings are now closed
+
+Remaining work is the HIGH / MEDIUM / LOW list in `CODE_REVIEW.md`. The highest
+value of those, in order:
+
+1. **Storage upload path traversal** — `useStorageUpload.ts:18` accepts a
+   caller-supplied `path` with `../` and upserts into a **public** bucket, so
+   another user's avatar can be overwritten. No path-prefix validation.
+2. **Keyset pagination drops rows permanently** — `useTools.ts` paginates on
+   `created_at`, which is **not unique**; `seedTools.ts:150` bulk-inserts many
+   tools in one statement so they share a timestamp. When a page boundary lands
+   inside such a batch, every remaining tool with that timestamp is skipped
+   forever.
+3. **Duplicate-submission detection only inspects 50 arbitrary tools** —
+   `submission.ts:49` has no `.order()`, so which 50 you get is non-deterministic.
+4. **N+1 notification fan-outs** — `notifications.ts` issues one RPC per
+   follower, sequentially; 2,000 followers blocks the UI.
+5. **24 functions with mutable `search_path`** — real escalation risk for
+   `SECURITY DEFINER`, but `supabase/README.md` warns a naive fix breaks them
+   because they reference tables unqualified. Needs schema-qualification first.
+
+Note the security advisor still reports 16 anon-callable `SECURITY DEFINER`
+functions. Several check roles internally and are fine once unauthenticated
+callers are refused; the `trigger_recalc_*` trio is trigger-only and just needs
+`EXECUTE` revoked. That is a cheap bulk win worth doing next.
 | 9 | `reputation_score` self-assignable | ✅ | `useProfile.ts:157-167` types update as `Record<string, unknown>`; narrow to a `ProfileUpdate` type + revoke the column |
 | 10 | Email enumeration | ✅ | `get_creator_email` / `get_submitter_email` (`functions.sql:284, :390`) — `SECURITY DEFINER`, no authz, no `REVOKE FROM anon` |
 

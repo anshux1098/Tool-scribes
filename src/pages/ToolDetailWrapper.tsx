@@ -31,7 +31,7 @@ export default function ToolDetailWrapper() {
   const [toolCollectionIds, setToolCollectionIds] = useState<number[]>([]);
   const [suggestModalOpen, setSuggestModalOpen] = useState(false);
   const { user, isAdmin, isModerator } = useAuth();
-  const { tools, addTool, toggleUpvote, saveToVault, toggleFavorite, removeFromVault, updateNotes, addTag, removeTag, recordVisit, updateScreenshot, updateAiProfile } = useTools();
+  const { tools, loading, addTool, toggleUpvote, saveToVault, toggleFavorite, removeFromVault, updateNotes, addTag, removeTag, recordVisit, updateScreenshot, updateAiProfile } = useTools();
   const { collections, addToolToCollection, removeToolFromCollection, createCollection } = useCollections();
   const search = useSearch();
 
@@ -145,6 +145,7 @@ export default function ToolDetailWrapper() {
         onUpdateScreenshot={updateScreenshot}
         isAdmin={isAdmin}
         onRegenerateAiProfile={handleRegenerateAiProfile}
+        loading={loading}
       />
       {currentTool?._uuid && (
         <div className="max-w-6xl mx-auto px-6 pb-4">

@@ -36,6 +36,12 @@ interface ToolDetailPageProps {
   onUpdateScreenshot?: (id: number, url: string) => void;
   isAdmin?: boolean;
   onRegenerateAiProfile?: (id: number) => Promise<void>;
+  /**
+   * True while the tool list is still loading. Without it this page renders
+   * "Tool not found" for every deep link and back-navigation, because `tools`
+   * is `[]` until the query resolves (#22).
+   */
+  loading?: boolean;
 }
 
 interface Activity {
@@ -66,7 +72,8 @@ export default function ToolDetailPage({
   tools, onSave, onToggleFavorite, onRemoveFromVault, onUpdateNotes, onAddTag, onRemoveTag, onRecordVisit, healthStatus,
   collections, collectionIds, onAddToCollection,
   reviews, myReview, reviewCount, onSubmitReview, onDeleteReview,
-  canUpload, onUpdateScreenshot, isAdmin, onRegenerateAiProfile
+  canUpload, onUpdateScreenshot, isAdmin, onRegenerateAiProfile,
+  loading
 }: ToolDetailPageProps) {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
@@ -151,6 +158,18 @@ export default function ToolDetailPage({
       ),
     ].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()).slice(0, 8);
   }, [collectionIds, tool]);
+
+  // #22: `tools` is [] until the query resolves, so bailing on `!tool` alone
+  // showed "Tool not found" on every /tool/:id deep link and back-navigation
+  // before the real content appeared. Wait for the query first.
+  if (!tool && loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 gap-3" aria-busy="true" aria-live="polite">
+        <div className="h-8 w-8 rounded-full border-2 border-tv-border border-t-tv-primary animate-spin" />
+        <p className="text-tv-text-s text-sm">Loading tool…</p>
+      </div>
+    );
+  }
 
   if (!tool) {
     return (
