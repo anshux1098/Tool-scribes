@@ -86,7 +86,8 @@ export default function ProfileSettingsModal({ open, onClose, onSaved }: Profile
       if (shelfRes.data) {
         setShelf(shelfRes.data.map(r => {
           const t = Array.isArray(r.tools) ? r.tools[0] : r.tools;
-          return { toolId: r.tool_id, name: t ? (t as any).name : 'Tool' };
+          const name = t && typeof t === 'object' && 'name' in t ? t.name : undefined;
+          return { toolId: r.tool_id, name: typeof name === 'string' ? name : 'Tool' };
         }));
       }
       if (toolsRes.data) {

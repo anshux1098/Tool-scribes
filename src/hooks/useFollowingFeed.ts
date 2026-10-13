@@ -74,7 +74,7 @@ export function useFollowingFeed() {
       const followedColIds = (colFollowRows ?? []).map(r => r.collection_id as string);
 
       // ── 3. Fetch profiles for followed curators ──
-      let profileMap = new Map<string, { username: string | null; displayName: string; bio: string; reputationScore: number; followerCount: number }>();
+      const profileMap = new Map<string, { username: string | null; displayName: string; bio: string; reputationScore: number; followerCount: number }>();
       if (followingIds.length > 0) {
         const { data: profilesRes } = await supabase
           .from('profiles')

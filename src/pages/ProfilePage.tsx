@@ -160,18 +160,20 @@ export default function ProfilePage() {
       const colRows = (colRes.data ?? []) as Array<Record<string, unknown>>;
       const revRows = (revRes.data ?? []) as Array<Record<string, unknown>>;
       const toolRows = (toolsRes.data ?? []) as Array<Record<string, unknown>>;
-      const shelfRows = (shelfRes.data ?? []) as Array<any>;
+      const shelfRows = (shelfRes.data ?? []) as Array<{ tool_id: string; tools: unknown }>;
 
       // Map shelf tools
       setShelfTools(shelfRows.map(r => {
         const t = Array.isArray(r.tools) ? r.tools[0] : r.tools;
-        if (!t) return null;
+        if (!t || typeof t !== 'object') return null;
+        const rec = t as Record<string, unknown>;
+        if (typeof rec.name !== 'string') return null;
         return {
-          id: t.id,
-          name: t.name,
-          icon: t.icon,
-          favicon: t.favicon,
-          color: toolColor(t.name)
+          id: typeof rec.id === 'string' ? rec.id : '',
+          name: rec.name,
+          icon: typeof rec.icon === 'string' ? rec.icon : '',
+          favicon: typeof rec.favicon === 'string' ? rec.favicon : '',
+          color: toolColor(rec.name)
         };
       }).filter(Boolean) as ToolInfo[]);
       if (!mountedRef.current) return;

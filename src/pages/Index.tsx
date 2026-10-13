@@ -47,7 +47,7 @@ export default function Index() {
       const vaultTools = tools.filter(t => t.savedToVault);
       if (vaultTools.length === 0) {
         let onboarded = false;
-        try { onboarded = localStorage.getItem('ts_onboarded') === 'true'; } catch {}
+        try { onboarded = localStorage.getItem('ts_onboarded') === 'true'; } catch { /* storage blocked */ }
         if (!onboarded) setOnboardingOpen(true);
       }
     }

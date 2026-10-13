@@ -244,7 +244,7 @@ export function useFollow() {
       .from('follows')
       .insert({ follower_id: user.id, following_id: targetUserId });
     if (error) {
-      if ((error as any)?.code === '23505') {
+      if ((error as { code?: string } | null)?.code === '23505') {
         console.log('[Follow] 409 detected — already following, treating as success');
         return true;
       }

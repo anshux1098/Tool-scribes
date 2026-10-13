@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ExternalLink, Star, Copy, Check, FolderPlus, Bookmark, Wrench, Clock, Sparkles, Globe, Shield, Monitor, MessageSquare, Plus, Send, Loader2, Trash2, Code } from 'lucide-react';
 import { Tool, Collection, Review, CATEGORY_COLORS, CATEGORY_BG, CATEGORY_LABELS } from '@/lib/types';
+import type { HealthStatus } from '@/lib/health';
 import { generateSummary } from '@/lib/generateSummary';
 import { askToolScribe } from '@/lib/ask-toolscribe';
 import { formatDistanceToNow } from 'date-fns';
@@ -236,7 +237,7 @@ export default function ToolDetailPage({
                 <span className="px-2.5 py-0.5 rounded text-[11px] font-mono font-medium" style={{ color: catColor, background: catBg }}>
                   {CATEGORY_LABELS[tool.category].toUpperCase()}
                 </span>
-                {healthStatus && <ToolHealthBadge status={healthStatus as any} />}
+                {healthStatus && <ToolHealthBadge status={healthStatus as HealthStatus} />}
               </div>
               <div className="flex items-center gap-3 mt-1.5 text-[12px] font-mono text-tv-text-m flex-wrap">
                 <span>{domain}</span>

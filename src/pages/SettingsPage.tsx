@@ -35,7 +35,7 @@ export default function SettingsPage() {
   const [profileError, setProfileError] = useState('');
 
   function lsGet(key: string, def: string): string { try { return localStorage.getItem(key) ?? def; } catch { return def; } }
-  function lsSet(key: string, val: string) { try { localStorage.setItem(key, val); } catch {} }
+  function lsSet(key: string, val: string) { try { localStorage.setItem(key, val); } catch { /* storage blocked */ } }
 
   // Notification prefs (persisted to DB via profiles metadata or localStorage)
   const [notifyReviewResponses, setNotifyReviewResponses] = useState(() => lsGet('notifyReviewResponses', 'true') === 'true');

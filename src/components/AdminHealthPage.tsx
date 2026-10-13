@@ -4,7 +4,7 @@ import { formatDistanceToNow } from 'date-fns';
 import ToolHealthBadge from '@/components/ToolHealthBadge';
 import { useAuth } from '@/hooks/useAuth';
 import { fetchAllToolHealth, fetchHealthCheckLogs, runHealthCheck, setToolHealthStatus, HEALTH_LABELS, HEALTH_COLORS } from '@/lib/health';
-import type { ToolHealth, HealthCheckLog } from '@/lib/health';
+import type { ToolHealth, HealthCheckLog, HealthStatus } from '@/lib/health';
 import { toast } from 'sonner';
 
 interface HealthEntry {
@@ -51,7 +51,7 @@ export default function AdminHealthPage() {
 
   const handleSetStatus = async (toolId: string, status: string) => {
     try {
-      await setToolHealthStatus(toolId, status as any);
+      await setToolHealthStatus(toolId, status as HealthStatus);
       await loadData();
       toast.success('Tool archived');
     } catch {
@@ -139,7 +139,7 @@ export default function AdminHealthPage() {
               >
                 <span className="text-[13px] font-mono text-tv-text truncate">{entry.toolId}</span>
                 <div>
-                  <ToolHealthBadge status={entry.health.status as any} size="md" />
+                  <ToolHealthBadge status={entry.health.status as HealthStatus} size="md" />
                 </div>
                 <span className="text-[12px] font-mono text-tv-text-s">
                   {entry.health.uptimePct != null ? `${Math.round(entry.health.uptimePct)}%` : '—'}

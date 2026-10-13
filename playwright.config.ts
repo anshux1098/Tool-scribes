@@ -26,7 +26,7 @@ export default defineConfig({
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : [["list"]],
 
   use: {
-    baseURL: process.env.E2E_BASE_URL ?? "http://localhost:8080",
+    baseURL: process.env.E2E_BASE_URL ?? (process.env.CI ? "http://localhost:4173" : "http://localhost:8080"),
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
@@ -35,15 +35,17 @@ export default defineConfig({
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
   ],
 
-  // CI sets E2E_BASE_URL and serves the production build itself; locally this
-  // starts the dev server. vite serves on 8080 (vite.config.ts), not the 3000
-  // the old scaffold assumed.
+  // No server to start when the caller already provides one (E2E_BASE_URL);
+  // otherwise Playwright boots it itself. CI builds the bundle first and so
+  // gets `vite preview` — the artefact that actually ships, which means the
+  // suite exercises the tightened CSP in vercel.json. Local runs get the dev
+  // server on 8080 (vite.config.ts), not the 3000 the old scaffold assumed.
   webServer: process.env.E2E_BASE_URL
     ? undefined
     : {
-        command: "npm run dev",
-        url: "http://localhost:8080",
+        command: process.env.CI ? "npm run build && npm run preview" : "npm run dev",
+        url: process.env.CI ? "http://localhost:4173" : "http://localhost:8080",
         reuseExistingServer: !process.env.CI,
-        timeout: 120_000,
+        timeout: 180_000,
       },
 });

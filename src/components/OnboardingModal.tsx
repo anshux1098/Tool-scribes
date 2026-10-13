@@ -36,13 +36,13 @@ export default function OnboardingModal({ open, onClose, onComplete }: Onboardin
   };
 
   const handleSkip = () => {
-    try { localStorage.setItem('ts_onboarded', 'true'); } catch {}
+    try { localStorage.setItem('ts_onboarded', 'true'); } catch { /* storage blocked (private mode, disabled cookies) */ }
     onComplete();
     onClose();
   };
 
   const handleDone = () => {
-    try { localStorage.setItem('ts_onboarded', 'true'); } catch {}
+    try { localStorage.setItem('ts_onboarded', 'true'); } catch { /* storage blocked (private mode, disabled cookies) */ }
     onComplete();
     onClose();
   };

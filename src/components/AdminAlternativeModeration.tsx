@@ -21,10 +21,12 @@ export default function AdminAlternativeModeration() {
   const load = async () => {
     setLoading(true);
     const items = await fetchPendingAlternatives();
-    // Map to simpler display format
+    // Map to simpler display format. fetchPendingAlternatives returns
+    // `Alternative & { sourceName: string }`; the local shape below is what
+    // this component renders, so narrow through that rather than `any`.
     setPending(items.map(i => ({
       id: i.id,
-      sourceName: (i as any).sourceName || 'Unknown',
+      sourceName: ('sourceName' in i && typeof i.sourceName === 'string' ? i.sourceName : null) || 'Unknown',
       altName: i.altName,
       createdAt: i.createdAt,
     })));

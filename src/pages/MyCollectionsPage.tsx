@@ -48,8 +48,8 @@ export default function MyCollectionsPage() {
   const handleToggleFeatured = (uuid: string) => {
     const next = featured === uuid ? null : uuid;
     setFeatured(next);
-    if (next) { try { localStorage.setItem('featuredCollection', next); } catch {} }
-    else { try { localStorage.removeItem('featuredCollection'); } catch {} }
+    if (next) { try { localStorage.setItem('featuredCollection', next); } catch { /* storage blocked */ } }
+    else { try { localStorage.removeItem('featuredCollection'); } catch { /* storage blocked */ } }
     toast.success(featured === uuid ? 'Unfeatured collection' : 'Featured collection set');
   };
 

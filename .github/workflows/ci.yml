@@ -75,19 +75,13 @@ jobs:
 
       # The smoke specs are anonymous by design (see playwright-fixture.ts), so
       # no Supabase secrets are needed and nothing is written to production.
-      #
-      # `vite preview` serves the real production build rather than the dev
-      # server, which means this job exercises the bundle that actually ships
-      # -- including whether the tightened CSP blocks anything. It needs no
-      # secrets. If you add authenticated specs later, inject credentials via
+      # E2E_BASE_URL is deliberately NOT set: playwright.config.ts's webServer
+      # builds and serves `vite preview` when CI=true, so the suite exercises
+      # the production bundle -- including whether the tightened CSP blocks
+      # anything. If you add authenticated specs later, inject credentials via
       # repository secrets rather than committing them.
-      - name: Build
-        run: npm run build
-
       - name: E2E smoke tests
         run: npm run test:e2e
-        env:
-          E2E_BASE_URL: http://localhost:4173
 
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
