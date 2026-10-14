@@ -106,6 +106,30 @@ function ensureUuidIndex(): Promise<Map<number, string>> {
   return uuidIndexPromise;
 }
 
+/**
+ * Composite keyset cursor.
+ *
+ * `created_at` alone is NOT unique — `seedTools.ts` bulk-inserts a whole batch in
+ * one statement, so every tool in that batch shares an identical timestamp.
+ * Verified in production: 30 of 80 tools sit on just 5 duplicated timestamps,
+ * one of which carries 8 tools.
+ *
+ * Paging with `created_at < cursor` therefore skipped everything sharing the
+ * boundary timestamp: once a page ended mid-batch, up to 7 tools became
+ * unreachable, permanently, with no way to page onto them.
+ *
+ * `id` breaks the tie. Both columns are ordered descending, matching the
+ * created_at ordering, and the filter is the standard composite-keyset form.
+ */
+interface ToolCursor {
+  createdAt: string;
+  id: string;
+}
+
+function buildKeysetFilter(cursor: ToolCursor): string {
+  return `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`;
+}
+
 export function useTools() {
   const { user } = useAuth();
   const [tools, setTools] = useState<(Tool & { _uuid: string })[]>([]);
@@ -113,9 +137,9 @@ export function useTools() {
   toolsRef.current = tools;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<ToolCursor | null>(null);
 
-  const fetchAll = useCallback(async (cursor?: string) => {
+  const fetchAll = useCallback(async (cursor?: ToolCursor) => {
     setLoading(true);
     setError(null);
     if (!isSupabaseConfigured) {
@@ -127,10 +151,13 @@ export function useTools() {
       let query = supabase
         .from('tools')
         .select('*')
+        // id is the tiebreaker. Without it, rows sharing a created_at have no
+        // defined relative order and the keyset boundary becomes arbitrary.
         .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
         .limit(PAGE_SIZE);
       if (cursor) {
-        query = query.lt('created_at', cursor);
+        query = query.or(buildKeysetFilter(cursor));
       }
       const { data: toolRows, error: toolsErr } = await query;
       if (toolsErr) throw toolsErr;
@@ -182,7 +209,14 @@ export function useTools() {
       });
 
       const last = toolRows?.[toolRows.length - 1];
-      setNextCursor(mapped.length === PAGE_SIZE && last ? (last.created_at as string) : null);
+      // Only offer a next page when this one was genuinely full. Otherwise the
+      // caller pages past the end and gets an empty result that looks like
+      // "no more tools" by accident rather than by exhaustion.
+      const full = mapped.length === PAGE_SIZE && last;
+      setNextCursor(full ? {
+        createdAt: last.created_at as string,
+        id: last.id as string,
+      } : null);
 
       // Keep the hash -> uuid index warm so deep links to already-seen tools
       // never need the full id query.

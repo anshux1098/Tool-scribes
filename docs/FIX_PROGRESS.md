@@ -17,7 +17,7 @@
 |---|---|
 | Critical findings | **24 / 24 fixed** |
 | Migrations applied to production | **10** (`…135041` … `…050604`) |
-| Tests | **68 unit + 4 e2e** (up from 17) |
+| Tests | **73 unit + 4 e2e** (up from 17) |
 | CI | **`.github/workflows/ci.yml`** — typecheck → lint → test → build → e2e |
 | TypeScript errors | **126 → 0** (`tsc -b` exits 0) |
 | **Blocking issue** | **None.** `moderate_review()` and the rate limiter exist in production |
@@ -704,27 +704,81 @@ The guard is defence in depth; the only caller passes the caller's own id.
 
 ---
 
-## 📌 Where things stand
+## ✅ Keyset pagination dropped tools permanently
 
-24/24 criticals fixed, and the top HIGH findings are now closed too.
+`useTools.fetchAll` paged with `.order('created_at').lt('created_at', cursor)`.
+**`created_at` is not unique** — `seedTools.ts:150` bulk-inserts a whole batch in
+one statement, so every tool in that batch shares an identical timestamp.
 
-Highest value remaining, in order:
+Measured on the live table: **30 of 80 tools sit on just 5 duplicated
+timestamps**, one of which carries 8 tools. Whenever a page boundary landed
+inside such a batch, everything remaining on that timestamp became unreachable —
+permanently, with no way to page onto it.
 
-1. **Keyset pagination drops rows permanently** — `useTools.ts` paginates on
-   `created_at`, which is **not unique**; `seedTools.ts:150` bulk-inserts many
-   tools in one statement so they share a timestamp. When a page boundary lands
-   inside such a batch, every remaining tool with that timestamp is skipped
-   forever.
-2. **Duplicate-submission detection only inspects 50 arbitrary tools** —
-   `submission.ts:49` has no `.order()`, so which 50 you get is non-deterministic.
-3. **N+1 notification fan-outs** — `notifications.ts` issues one RPC per
-   follower, sequentially; 2,000 followers blocks the UI.
-4. **16 anon-callable `SECURITY DEFINER` functions** — several check roles
+**Quantified, not assumed.** Walking the real table at page size 5:
+
+| cursor | tools reached | missed |
+|---|---|---|
+| `created_at` only (old) | **66 / 80** | **14** |
+| `(created_at, id)` (new) | **80 / 80** | **0** |
+
+Fixed with a composite keyset: order by `created_at desc, id desc` and filter
+`created_at.lt.X, and(created_at.eq.X, id.lt.Y)`. `nextCursor` became a
+`{createdAt, id}` object.
+
+5 tests in `tools-pagination.test.ts`, including one that **demonstrates the
+old cursor losing rows** so the failure mode is pinned rather than described.
+
+> Writing that test surfaced a bug in my own helper: I evaluated
+> `created_at.lt.X` as a hard filter, which drops precisely the same-timestamp
+> rows the `id` tiebreaker exists to rescue. The two clauses are OR'd. Worth
+> remembering when writing a filter matcher — it "passed" the simple cases.
+
+---
+
+## 📋 What's left
+
+24/24 criticals are closed, plus the top HIGH findings. Remaining, by value:
+
+**Security / integrity**
+
+1. **16 anon-callable `SECURITY DEFINER` functions.** Several check roles
    internally and are fine once unauthenticated callers are refused; the
    `trigger_recalc_*` trio is trigger-only and just needs `EXECUTE` revoked.
-5. **24 functions with mutable `search_path`** — real escalation risk for
-   `SECURITY DEFINER`, but a naive fix breaks them because they reference tables
-   unqualified. Needs schema-qualification first.
+   Cheapest remaining win — mostly mechanical.
+2. **24 functions with mutable `search_path`** — real escalation risk for
+   `SECURITY DEFINER`. `supabase/README.md` warns a naive fix breaks them because
+   they reference tables unqualified, so this needs a schema-qualification pass
+   first, not a blanket `SET search_path = ''`.
+3. **Edge functions leak upstream error text** (`generate-ai-profile` returns the
+   OpenRouter/Gemini error body to the caller) and **log full prompts and raw
+   upstream response bodies**.
+4. **`fetchMetadata.ts` sends every submitted URL through `corsproxy.io`** — a
+   third party learns every URL users submit. No timeout, no `response.ok` check.
+5. **`health.ts` treats a CORS-proxy outage as unhealthy**, so a proxy failure
+   marks the whole database down.
+6. **`useModerationCounts` caches on a global react-query key** with no reset on
+   `onAuthStateChange` — an admin who signs out can leave their pending counts
+   visible to the next user for up to 25 s.
+
+**Data correctness**
+
+7. **Duplicate-submission detection only inspects 50 arbitrary tools** —
+   `submission.ts:49` has no `.order()`, so which 50 you get is
+   non-deterministic.
+8. **`get_submissions_for_review()` returns the whole table** and is filtered and
+   sliced client-side; the cursor is applied *after* the status filter, so paging
+   within a filtered set skips rows.
+9. **Notification fan-out is N+1** — one RPC per follower, sequential; 2,000
+   followers blocks the UI. Wants one `INSERT ... SELECT` in a `SECURITY
+   DEFINER` function.
+10. **`recordVisit` is a client-side read-modify-write** on `visit_count`; two
+    tabs lose increments.
+
+**UX / accessibility** — roughly 40 a11y issues remain from the original audit:
+no Escape handling anywhere (every modal), nested `<button>` elements, icon-only
+buttons with no accessible name, hover-only reveals, and ~20 files hardcoding hex
+that breaks dark mode.
 | 9 | `reputation_score` self-assignable | ✅ | `useProfile.ts:157-167` types update as `Record<string, unknown>`; narrow to a `ProfileUpdate` type + revoke the column |
 | 10 | Email enumeration | ✅ | `get_creator_email` / `get_submitter_email` (`functions.sql:284, :390`) — `SECURITY DEFINER`, no authz, no `REVOKE FROM anon` |
 
