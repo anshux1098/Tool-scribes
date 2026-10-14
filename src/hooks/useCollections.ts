@@ -188,50 +188,35 @@ export function useCollections() {
     if (err) setCollections(prev => prev.map(c => c.id === numId ? { ...c, isPublic: !newVal } : c));
   }, [getUuid, collections]);
 
+  /**
+   * Clone a public collection into the caller's account.
+   *
+   * Previously this reimplemented the RPC client-side as 4 sequential
+   * round-trips (read collection, read collection_tools, insert collection,
+   * insert tools). That was not a transaction, so a failure partway left an
+   * empty orphaned collection with no rollback -- the catch only logged. It
+   * also never incremented `clone_count`, which is the only thing that writes
+   * that column, making `usePublicCollections`' 'clones' sort a permanent
+   * no-op.
+   *
+   * Now delegates to clone_public_collection(), which derives the owner from
+   * the session (migration 20261010045241), increments clone_count, and does
+   * the whole thing in one server-side transaction.
+   */
   const cloneCollection = useCallback(async (collectionUuid: string): Promise<boolean> => {
     if (!user) return false;
-    try {
-      const { data: src, error: srcErr } = await supabase
-        .from('collections')
-        .select('*')
-        .eq('id', collectionUuid)
-        .single();
-      if (srcErr || !src) throw srcErr ?? new Error('Collection not found');
-
-      const { data: toolIds, error: ctErr } = await supabase
-        .from('collection_tools')
-        .select('tool_id')
-        .eq('collection_id', collectionUuid);
-      if (ctErr) throw ctErr;
-
-      const { data: newCol, error: insErr } = await supabase
-        .from('collections')
-        .insert({ user_id: user.id, name: src.name + ' (copy)', description: src.description })
-        .select()
-        .single();
-      if (insErr || !newCol) throw insErr ?? new Error('Failed to create clone');
-
-      if ((toolIds ?? []).length > 0) {
-        const inserts = (toolIds ?? []).map((t: { tool_id: string }) => ({
-          collection_id: newCol.id,
-          tool_id: t.tool_id,
-        }));
-        const { error: batchErr } = await supabase
-          .from('collection_tools')
-          .insert(inserts);
-        if (batchErr) throw batchErr;
-      }
-
-      setCollections(prev => [
-        rowToCollection(newCol as unknown as CollectionRow, (toolIds ?? []).length),
-        ...prev,
-      ]);
-      return true;
-    } catch (e) {
-      console.error('cloneCollection error', e);
+    const { data, error } = await supabase.rpc('clone_public_collection', {
+      p_source_collection_id: collectionUuid,
+    });
+    if (error || !data) {
+      console.error('cloneCollection error', error);
       return false;
     }
-  }, [user]);
+    // Refresh from the source of truth rather than hand-building a row: the RPC
+    // sets fields (is_public = false, cover_image_url) the old insert omitted.
+    await fetchCollections();
+    return true;
+  }, [user, fetchCollections]);
 
   const getCollectionsForTool = useCallback(async (toolUuid: string): Promise<number[]> => {
     if (!user) return [];

@@ -698,10 +698,16 @@ CREATE TRIGGER recalc_rep_review AFTER INSERT OR DELETE OR UPDATE ON public.revi
 -- 'collection-covers') and by SubmitToolModal/ToolScreenshot ('screenshots').
 
 -- id                public  size_limit  mime_types
--- avatars           true    null        null
--- banners           true    null        null
--- collection-covers true    null        null
+-- avatars           true    5242880     image/png, image/jpeg, image/webp, image/gif
+-- banners           true    5242880     image/png, image/jpeg, image/webp, image/gif
+-- collection-covers true    5242880     image/png, image/jpeg, image/webp, image/gif
 -- screenshots       true    5242880     image/png, image/jpeg, image/webp
+--
+-- The first three were file_size_limit = null, allowed_mime_types = null until
+-- migration 20261014050604. They are PUBLIC and rendered inside <img> on
+-- profile pages, so an HTML or SVG upload was served from the CDN with its own
+-- content type -- stored XSS on a first-party origin -- and there was no cap on
+-- upload size.
 
 -- ─── SECTION 9: COLUMN-LEVEL GRANTS (security-relevant) ─────────────────────
 --

@@ -78,6 +78,7 @@ mirrored as files in `supabase/migrations/`.
 | 58 | 20261009193102 | fix_toggle_upvote_zero_row | ✅ |
 | 59 | 20261010045241 | harden_clone_and_email | ✅ |
 | 60 | 20261010091402 | scope_profile_updates | ✅ |
+| 61 | 20261014050604 | lock_storage_and_follows | ✅ |
 
 ### Notes on 52–58
 
@@ -156,3 +157,28 @@ matching file in `supabase/migrations/`.
 `apply_migration` assigns its **own** version timestamps, so the filename must
 be renamed to match the version it reports. A file whose name disagrees with
 `schema_migrations` is treated as unapplied and replayed by `supabase db push`.
+## Notes on 61
+
+- The vatars / anners / collection-covers storage buckets were
+  ile_size_limit = null, allowed_mime_types = null while screenshots was
+  already capped. These three are public and rendered in <img>, so an HTML or
+  SVG upload was stored XSS on a first-party origin. Capped at 5 MiB and to
+  image MIME types. Verified before applying: the largest existing object is
+  1,478,353 bytes, so nothing was affected.
+- collection_followers had `cf: public read ... USING (true)` -- the entire
+  follow graph of every user and collection was world-readable, including
+  follows of private collections. Replaced with a policy allowing your own rows
+  plus rows on collections that are public or yours.
+- `cf: owner insert` only checked `user_id = auth.uid()`, so any private
+  collection UUID could be followed (and then, via the read, enumerated). It now
+  requires the target collection to be public or owned by the caller.
+- get_vault_recommendations() gained an explicit `p_user_id = auth.uid()`
+  guard. It was SECURITY INVOKER with RLS on `vault_items` so it was already
+  effectively closed; this is defence in depth.
+
+> **Testing RLS requires a non-owner role.** `collection_followers` has
+> `relforcerowsecurity = false`, so `postgres` BYPASSES its policies. Probing
+> as `postgres` showed every follow "allowed" and made the new policy look
+> broken. `set local role authenticated` is what makes the test meaningful --
+> and the temp table needs its own GRANT to that role or the probe fails for the
+> wrong reason.

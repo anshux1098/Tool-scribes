@@ -70,6 +70,22 @@ scopes, so `execute_sql` fails with 403 "after trying upscoping".
   on every policy for the table), `last_seen_notifications_at`, `created_at` and
   `id` are server-owned. `src/hooks/useProfile.ts` exports a matching
   `ProfileUpdate` interface — **keep the two lists in sync**.
+- `collection_followers` no longer world-readable. `cf: public read` had
+  `USING (true)`, so anyone could select the whole follow graph including follows
+  of private collections. Now a row is readable if it is yours or its collection
+  is public/owned by you; insert additionally requires the target collection to
+  be public or yours (`20261014050604`).
+- `get_vault_recommendations()` now requires `p_user_id = auth.uid()`
+  (`20261014050604`). It was SECURITY INVOKER with RLS on `vault_items`, so it
+  was already effectively closed — this makes it explicit.
+- Storage buckets `avatars` / `banners` / `collection-covers` are capped at
+  5 MiB and to image MIME types (`20261014050604`). They were
+  `file_size_limit = null, allowed_mime_types = null` while `screenshots` was
+  already capped. They are public and rendered in `<img>`, so an HTML/SVG
+  upload was stored XSS on a first-party origin.
+- `clone_public_collection()` has no owner parameter and increments
+  `clone_count`; `useCollections.cloneCollection` now calls it instead of
+  reimplementing it client-side in 4 non-transactional round-trips.
 - 24 routines have a mutable `search_path` (advisor `function_search_path_mutable`).
   Fixing requires schema-qualifying all table references first.
 - `calculate_reputation(target_user_id)`, `delete_my_account()`,

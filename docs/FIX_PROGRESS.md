@@ -16,8 +16,8 @@
 | | |
 |---|---|
 | Critical findings | **24 / 24 fixed** |
-| Migrations applied to production | **9** (`…135041` … `…091402`) |
-| Tests | **58 unit + 4 e2e** (up from 17) |
+| Migrations applied to production | **10** (`…135041` … `…050604`) |
+| Tests | **68 unit + 4 e2e** (up from 17) |
 | CI | **`.github/workflows/ci.yml`** — typecheck → lint → test → build → e2e |
 | TypeScript errors | **126 → 0** (`tsc -b` exits 0) |
 | **Blocking issue** | **None.** `moderate_review()` and the rate limiter exist in production |
@@ -649,31 +649,82 @@ the public route, instead of implying it does not exist.
 
 ---
 
-## 📌 All 24 critical findings are now closed
+## ✅ HIGH batch — storage traversal, follow graph, clone integrity
 
-Remaining work is the HIGH / MEDIUM / LOW list in `CODE_REVIEW.md`. The highest
-value of those, in order:
+Four HIGH findings from `CODE_REVIEW.md`.
 
-1. **Storage upload path traversal** — `useStorageUpload.ts:18` accepts a
-   caller-supplied `path` with `../` and upserts into a **public** bucket, so
-   another user's avatar can be overwritten. No path-prefix validation.
-2. **Keyset pagination drops rows permanently** — `useTools.ts` paginates on
+**Storage path traversal.** `useStorageUpload` accepted a caller-supplied `path`
+and used `upsert: true` on a **public** bucket, so a path containing `../`
+resolved to any other key — one user could overwrite another's avatar or banner.
+`remove()` trusted the path the same way. Now every path must sit under the
+caller's own prefix, with traversal, absolute paths, backslashes, empty segments
+and control characters rejected. Also added a MIME allowlist: these buckets are
+rendered in `<img>`, so an HTML/SVG upload was stored XSS on a first-party
+origin. 10 tests in `storage-path-guard.test.ts`.
+
+The DB half is migration `20261014050604` — the buckets had
+`file_size_limit = null, allowed_mime_types = null` while `screenshots` was
+already capped. Now 5 MiB, images only. Verified first that the largest existing
+object is 1,478,353 bytes, so nothing is affected.
+
+**`collection_followers` was world-readable.** `cf: public read ... USING (true)`
+let anyone select every follow row site-wide — the complete follower graph of
+every user and collection, including follows of **private** collections. Replaced
+with a policy allowing your own rows plus rows on collections that are public or
+yours, which is everything the client actually needs.
+
+**`cf: owner insert` had no visibility check.** Nothing required the target
+collection to be public or yours, so any private collection UUID could be
+followed and then enumerated via the read above.
+
+**`cloneCollection` reimplemented the RPC client-side** in 4 sequential,
+non-transactional round-trips — a failure partway left an empty orphaned
+collection with no rollback, and it never incremented `clone_count`, which is the
+only writer of that column, making `usePublicCollections`' 'clones' sort a
+permanent no-op. Now delegates to the hardened `clone_public_collection()`.
+
+**`get_vault_recommendations`** gained an explicit `p_user_id = auth.uid()` guard.
+It is `SECURITY INVOKER` and `vault_items` has RLS, so it was already effectively
+closed — the honest characterisation is that the advisory was low-sensitivity.
+The guard is defence in depth; the only caller passes the caller's own id.
+
+> **Testing an RLS policy requires a non-owner role.** My first two probes ran as
+> `postgres` and reported every follow "allowed", making the new policy look
+> broken. `relforcerowsecurity` is false, so the table owner bypasses its own
+> policies. `set local role authenticated` is what makes the test meaningful —
+> and the temp table then needs a GRANT to that role or the probe fails for an
+> unrelated reason. Verified properly:
+
+| check | result |
+|---|---|
+| follow a private collection | **blocked** |
+| follow a public collection | allowed |
+| read follows of private collections | **0 rows** |
+| read follows of a public collection | intact |
+
+---
+
+## 📌 Where things stand
+
+24/24 criticals fixed, and the top HIGH findings are now closed too.
+
+Highest value remaining, in order:
+
+1. **Keyset pagination drops rows permanently** — `useTools.ts` paginates on
    `created_at`, which is **not unique**; `seedTools.ts:150` bulk-inserts many
    tools in one statement so they share a timestamp. When a page boundary lands
    inside such a batch, every remaining tool with that timestamp is skipped
    forever.
-3. **Duplicate-submission detection only inspects 50 arbitrary tools** —
+2. **Duplicate-submission detection only inspects 50 arbitrary tools** —
    `submission.ts:49` has no `.order()`, so which 50 you get is non-deterministic.
-4. **N+1 notification fan-outs** — `notifications.ts` issues one RPC per
+3. **N+1 notification fan-outs** — `notifications.ts` issues one RPC per
    follower, sequentially; 2,000 followers blocks the UI.
+4. **16 anon-callable `SECURITY DEFINER` functions** — several check roles
+   internally and are fine once unauthenticated callers are refused; the
+   `trigger_recalc_*` trio is trigger-only and just needs `EXECUTE` revoked.
 5. **24 functions with mutable `search_path`** — real escalation risk for
-   `SECURITY DEFINER`, but `supabase/README.md` warns a naive fix breaks them
-   because they reference tables unqualified. Needs schema-qualification first.
-
-Note the security advisor still reports 16 anon-callable `SECURITY DEFINER`
-functions. Several check roles internally and are fine once unauthenticated
-callers are refused; the `trigger_recalc_*` trio is trigger-only and just needs
-`EXECUTE` revoked. That is a cheap bulk win worth doing next.
+   `SECURITY DEFINER`, but a naive fix breaks them because they reference tables
+   unqualified. Needs schema-qualification first.
 | 9 | `reputation_score` self-assignable | ✅ | `useProfile.ts:157-167` types update as `Record<string, unknown>`; narrow to a `ProfileUpdate` type + revoke the column |
 | 10 | Email enumeration | ✅ | `get_creator_email` / `get_submitter_email` (`functions.sql:284, :390`) — `SECURITY DEFINER`, no authz, no `REVOKE FROM anon` |
 
