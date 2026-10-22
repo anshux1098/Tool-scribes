@@ -101,8 +101,17 @@ END;
 $function$;
 
 -- ─── calculate_reputation(target_user_id uuid) ──────────────────────────────
--- SECURITY DEFINER, mutable search_path. Trigger-only intent: see the three
--- trigger_recalc_* functions. Called via POSTGREST by any authenticated user.
+-- SECURITY DEFINER, mutable search_path.
+--
+-- EXECUTE is revoked from anon and authenticated (migration 20261022043331).
+-- It had NO authorization check at all, so any caller could compute any user's
+-- score and thereby enumerate their activity. No client calls it -- the only
+-- callers are the trigger_recalc_* functions, which are SECURITY DEFINER and
+-- run as the table owner, so they still reach it.
+--
+-- This function COMPUTES the score; recalculate_reputation() is what WRITES
+-- it. The triggers used to call this one directly with `perform`, which
+-- discarded the result, so reputation_score was never written by anything.
 
 CREATE OR REPLACE FUNCTION public.calculate_reputation(target_user_id uuid)
  RETURNS integer
@@ -626,6 +635,15 @@ $function$;
 -- ─── is_admin() / is_moderator() ────────────────────────────────────────────
 -- Used by ~20 RLS policies. SECURITY DEFINER so RLS evaluation itself works.
 -- Both have a mutable search_path (advisor finding).
+--
+-- DELIBERATE ADVISOR EXCEPTION (migration 20261022043331): EXECUTE stays
+-- granted to anon and authenticated, so the advisor will keep reporting them.
+-- 15 policies call is_admin() and 5 call is_moderator() in USING/WITH CHECK,
+-- and a policy expression is evaluated as the role running the query -- so
+-- revoking EXECUTE makes every query on those tables fail with "permission
+-- denied" rather than merely denying access. The client also calls both
+-- directly (src/hooks/useAuth.ts) to decide whether to show admin UI.
+-- Both return a boolean about the CALLER and expose nothing.
 
 CREATE OR REPLACE FUNCTION public.is_admin()
  RETURNS boolean
@@ -703,20 +721,44 @@ $function$;
 -- ─── trigger_recalc_follow() / _review() / _submission() ────────────────────
 -- Trigger-only functions. Exposed to `authenticated` via PostgREST (advisor
 -- finding) but fail when called directly because tg_op/NEW are undefined.
--- NOTE: _follow() recalculates on the curator_follows table, which is legacy
--- and has 0 rows — so follower reputation changes never recalculate.
+-- NOTE: the follow trigger now fires on public.follows -- the table the app
+-- actually writes -- rather than curator_follows, which is legacy and unused.
+-- The old trigger also DISCARDED the score: `perform calculate_reputation(...)`
+-- computed it and threw the result away, so reputation_score was never written.
+-- recalculate_reputation() is the step that persists it.
+
+CREATE OR REPLACE FUNCTION public.recalculate_reputation(p_user_id uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path = public, pg_temp
+AS $function$
+begin
+  if p_user_id is null then
+    return;
+  end if;
+  update public.profiles
+     set reputation_score = public.calculate_reputation(p_user_id)
+   where user_id = p_user_id;
+end;
+$function$;
 
 CREATE OR REPLACE FUNCTION public.trigger_recalc_follow()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path = public, pg_temp
 AS $function$
 begin
   if tg_op = 'INSERT' then
-    perform calculate_reputation(new.curator_id);
-  end if;
-  if tg_op = 'DELETE' then
-    perform calculate_reputation(old.curator_id);
+    perform public.recalculate_reputation(new.following_id);
+  elsif tg_op = 'DELETE' then
+    perform public.recalculate_reputation(old.following_id);
+  elsif tg_op = 'UPDATE' then
+    perform public.recalculate_reputation(new.following_id);
+    if old.following_id is distinct from new.following_id then
+      perform public.recalculate_reputation(old.following_id);
+    end if;
   end if;
   return null;
 end;
@@ -726,9 +768,19 @@ CREATE OR REPLACE FUNCTION public.trigger_recalc_review()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path = public, pg_temp
 AS $function$
 begin
-  perform calculate_reputation(coalesce(new.user_id, old.user_id));
+  if tg_op = 'INSERT' then
+    perform public.recalculate_reputation(new.user_id);
+  elsif tg_op = 'DELETE' then
+    perform public.recalculate_reputation(old.user_id);
+  elsif tg_op = 'UPDATE' then
+    perform public.recalculate_reputation(new.user_id);
+    if old.user_id is distinct from new.user_id then
+      perform public.recalculate_reputation(old.user_id);
+    end if;
+  end if;
   return null;
 end;
 $function$;
@@ -737,11 +789,20 @@ CREATE OR REPLACE FUNCTION public.trigger_recalc_submission()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path = public, pg_temp
 AS $function$
 begin
   if tg_op = 'INSERT' or tg_op = 'UPDATE' then
     if new.status = 'approved' and new.submitted_by is not null then
-      perform calculate_reputation(new.submitted_by);
+      perform public.recalculate_reputation(new.submitted_by);
+    end if;
+    if tg_op = 'UPDATE' and old.status = 'approved' and old.submitted_by is not null
+       and (new.status is distinct from 'approved' or new.submitted_by is distinct from old.submitted_by) then
+      perform public.recalculate_reputation(old.submitted_by);
+    end if;
+  elsif tg_op = 'DELETE' then
+    if old.status = 'approved' and old.submitted_by is not null then
+      perform public.recalculate_reputation(old.submitted_by);
     end if;
   end if;
   return null;

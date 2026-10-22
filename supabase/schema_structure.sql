@@ -690,8 +690,17 @@ CREATE POLICY vaults_update_own ON public.vaults FOR UPDATE TO public USING ((us
 -- ─── SECTION 7: TRIGGERS ────────────────────────────────────────────────────
 
 CREATE TRIGGER recalc_rep_submission AFTER INSERT OR UPDATE ON public.tool_submissions FOR EACH ROW EXECUTE FUNCTION trigger_recalc_submission();
-CREATE TRIGGER recalc_rep_follow AFTER INSERT OR DELETE ON public.curator_follows FOR EACH ROW EXECUTE FUNCTION trigger_recalc_follow();
 CREATE TRIGGER recalc_rep_review AFTER INSERT OR DELETE OR UPDATE ON public.reviews FOR EACH ROW EXECUTE FUNCTION trigger_recalc_review();
+CREATE TRIGGER recalc_rep_follow AFTER INSERT OR UPDATE OR DELETE ON public.follows FOR EACH ROW EXECUTE FUNCTION trigger_recalc_follow();
+
+-- The follow trigger moved from public.curator_follows to public.follows in
+-- migration 20261022044956. curator_follows is a legacy table with 0 rows and no
+-- references in src/; `follows` is the live follow relationship. The old
+-- trigger also discarded the computed score (`perform calculate_reputation(...)`
+-- with no assignment), so profiles.reputation_score was never written by
+-- anything -- it read 0 for every user. recalculate_reputation() now persists
+-- it, and the score is reversible: un-following and un-approving both take the
+-- points back.
 
 -- ─── SECTION 8: STORAGE BUCKETS ─────────────────────────────────────────────
 -- Referenced by src/hooks/useStorageUpload.ts ('avatars' | 'banners' |

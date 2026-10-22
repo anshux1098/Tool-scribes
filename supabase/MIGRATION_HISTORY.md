@@ -79,6 +79,43 @@ mirrored as files in `supabase/migrations/`.
 | 59 | 20261010045241 | harden_clone_and_email | ✅ |
 | 60 | 20261010091402 | scope_profile_updates | ✅ |
 | 61 | 20261014050604 | lock_storage_and_follows | ✅ |
+| 62 | 20261022043331 | close_anon_rpc_surface | ✅ |
+| 63 | 20261022044956 | fix_reputation_scoring | ✅ |
+
+## Notes on 62–63
+
+- **20261022043331** revoked EXECUTE from `anon` on 11 SECURITY DEFINER
+  functions, and from `anon`+`authenticated` on the trigger-only ones and
+  `calculate_reputation`. The advisor's anon-callable count went 13 → 2.
+  - `is_admin()` and `is_moderator()` are a **deliberate exception**: 15 and 5
+    RLS policies respectively call them in `USING`/`WITH CHECK`, and a policy
+    expression is evaluated as the querying role, so revoking EXECUTE would make
+    every query on those tables fail with a permission error rather than merely
+    denying access. The client also calls both directly. Both expose only a
+    boolean about the caller.
+  - **Also fixes a regression this session introduced.** Migration
+    `20261009135051` granted `moderate_review()` to `service_role` only, on the
+    assumption that only the server would call it. But the admin UI calls it
+    via `supabase.rpc()` with the `authenticated` key, so every moderation
+    action returned `permission denied for function moderate_review`. The grant
+    is restored; the function checks `is_moderator()` internally, so an
+    authenticated non-moderator is still refused.
+- **20261022044956** makes reputation actually work. It has **never** been
+  written: all three recalc triggers did `perform calculate_reputation(...)`,
+  which computes the score and discards it, and nothing ever issued the
+  `UPDATE`. Compounding it, the follow trigger was attached to
+  `curator_follows` — a legacy table with 0 rows and no references in `src/` —
+  while the live table `follows` had no trigger at all, and
+  `calculate_reputation()` counts `follows`. Three bugs, one dead feature.
+  `recalculate_reputation()` now persists the score, the triggers call it
+  (handling UPDATE and the old row so un-approving and un-following reverse the
+  score), the follow trigger is on `follows`, and a backfill set the existing
+  scores — which went from 0 for all 8 profiles to 301 / 130 / 20 / 10 / 10.
+
+> **Testing RLS requires a non-owner role.** `relforcerowsecurity` is false on
+> these tables, so `postgres` bypasses the very policies under test. Use
+> `set local role authenticated` — and grant the temp table to that role, or the
+> probe fails for an unrelated reason.
 
 ### Notes on 52–58
 

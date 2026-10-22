@@ -86,6 +86,20 @@ scopes, so `execute_sql` fails with 403 "after trying upscoping".
 - `clone_public_collection()` has no owner parameter and increments
   `clone_count`; `useCollections.cloneCollection` now calls it instead of
   reimplementing it client-side in 4 non-transactional round-trips.
+- `is_admin()` / `is_moderator()` are a **deliberate advisor exception** and
+  are still reported as anon-callable. 15 and 5 RLS policies respectively call
+  them in `USING`/`WITH CHECK`, and a policy expression is evaluated as the
+  querying role — revoking EXECUTE would make every query on those tables fail
+  with a permission error rather than merely denying access. The client also
+  calls both directly. They expose only a boolean about the caller
+  (`20261022043331`).
+- `calculate_reputation()` is revoked from `anon` and `authenticated`; it had no
+  authorization check at all, so any caller could compute any user's score. Only
+  the `SECURITY DEFINER` triggers call it, and they run as the table owner.
+- Reputation now works. It had **never** been written: the triggers computed
+  the score with `perform` and discarded it, and the follow trigger was on the
+  unused `curator_follows` table rather than the live `follows`. Fixed and
+  backfilled in `20261022044956`.
 - 24 routines have a mutable `search_path` (advisor `function_search_path_mutable`).
   Fixing requires schema-qualifying all table references first.
 - `calculate_reputation(target_user_id)`, `delete_my_account()`,

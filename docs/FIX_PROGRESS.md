@@ -16,8 +16,9 @@
 | | |
 |---|---|
 | Critical findings | **24 / 24 fixed** |
-| Migrations applied to production | **10** (`…135041` … `…050604`) |
+| Migrations applied to production | **12** (`…135041` … `…044956`) |
 | Tests | **73 unit + 4 e2e** (up from 17) |
+| Advisor | anon-callable `SECURITY DEFINER` **17 → 2** (both documented exceptions) |
 | CI | **`.github/workflows/ci.yml`** — typecheck → lint → test → build → e2e |
 | TypeScript errors | **126 → 0** (`tsc -b` exits 0) |
 | **Blocking issue** | **None.** `moderate_review()` and the rate limiter exist in production |
@@ -736,26 +737,102 @@ old cursor losing rows** so the failure mode is pinned rather than described.
 
 ---
 
+## ✅ Batch A — the anon-callable `SECURITY DEFINER` surface
+
+The advisor reported 13 functions `anon` could execute. **11 are now closed**;
+the remaining 2 are a deliberate, documented exception.
+
+| revoked from | functions | why it's safe |
+|---|---|---|
+| anon | `approve_submission`, `reject_submission`, `get_submissions_for_review` | each checks `user_roles … role IN ('admin','moderator')` internally |
+| anon | `delete_my_account`, `vote_alternative`, `unvote_alternative` | each derives the actor from `auth.uid()`, so they only touch the caller's own row |
+| anon + authenticated | `handle_new_user`, `trigger_recalc_follow/review/submission` | trigger-only. PostgreSQL checks a trigger function's EXECUTE privilege at `CREATE TRIGGER` time, not at runtime — verified by inserting a review as `authenticated` with the grant revoked |
+| anon + authenticated | `calculate_reputation` | no client calls it (only the `SECURITY DEFINER` triggers, which run as the owner). It had **no authorization check at all**, so any caller could compute any user's score and enumerate their activity |
+
+### The two that must stay
+
+`is_admin()` and `is_moderator()` are still reported, deliberately. **15 and 5
+RLS policies** call them in `USING`/`WITH CHECK`, and a policy expression is
+evaluated as the role running the query — so revoking EXECUTE would make every
+query on those tables fail with `permission denied` rather than merely denying
+access. An anonymous `SELECT` evaluates each permissive policy in turn, so an
+error in the `is_admin()` policy fails the query even when another policy would
+have allowed it. The client also calls both directly (`useAuth.ts:23-24`) to
+decide whether to show admin UI. Both return a boolean about the caller and
+expose nothing.
+
+### A regression I introduced, and caught
+
+Migration `20261009135051` (finding #5) granted `moderate_review()` to
+`service_role` **only**, on the assumption that only the server would call it.
+Wrong — the admin UI calls it via `supabase.rpc()` with the `authenticated` key,
+so **every moderation action returned `permission denied for function
+moderate_review`**. Proven against production:
+
+```
+set local role authenticated;
+perform public.moderate_review(...);  -->  permission denied
+```
+
+The grant is restored. The function checks `is_moderator()` internally, so an
+authenticated non-moderator is still refused. Verified: the call now passes the
+permission check and reaches the role check.
+
+### Verified after applying
+
+| check | result |
+|---|---|
+| anon read of `tools` (policies call `is_admin()`) | OK |
+| anon read of `reviews` (policies call `is_admin()`) | OK |
+| authenticated read of `reviews` | OK |
+| `moderate_review` as `authenticated` | callable (reaches role check) |
+| review insert (fires the trigger) | OK |
+
+## ✅ Reputation was never written — three compounding bugs
+
+Found while closing the RPC surface. Every profile had `reputation_score = 0`
+and **nothing in the database ever wrote that column**.
+
+1. **The triggers discarded the result.** All three did
+   `perform calculate_reputation(new.user_id);` — `perform` runs the function and
+   throws the result away. The score was computed on every write and discarded.
+2. **The follow trigger was on the wrong table.** `recalc_rep_follow` was
+   attached to `curator_follows` — a legacy table with **0 rows and no
+   references in `src/`**. The live relationship is `follows`, which had **no
+   trigger at all**.
+3. **`calculate_reputation` counts `follows`, not `curator_follows`** — so even
+   the right trigger would have counted the wrong table.
+
+Fixed with `recalculate_reputation()`, which actually persists the score; the
+triggers rewritten to call it, handling `UPDATE` and the old row so
+un-approving and un-following *reverse* the score; the follow trigger moved to
+`follows`; and a backfill.
+
+**Verified in production:** scores went from `0` for all 8 profiles to
+**301 / 130 / 20 / 10 / 10**. A follow moved a score **20 → 21**, and
+un-following moved it back **21 → 20**.
+
+---
+
 ## 📋 What's left
 
-24/24 criticals are closed, plus the top HIGH findings. Remaining, by value:
+24/24 criticals are closed, the top HIGH findings are closed, and the
+anon-callable RPC surface is down to two documented exceptions. Remaining, by
+value:
 
 **Security / integrity**
 
-1. **16 anon-callable `SECURITY DEFINER` functions.** Several check roles
-   internally and are fine once unauthenticated callers are refused; the
-   `trigger_recalc_*` trio is trigger-only and just needs `EXECUTE` revoked.
-   Cheapest remaining win — mostly mechanical.
-2. **24 functions with mutable `search_path`** — real escalation risk for
+1. **17 functions with mutable `search_path`** — real escalation risk for
    `SECURITY DEFINER`. `supabase/README.md` warns a naive fix breaks them because
    they reference tables unqualified, so this needs a schema-qualification pass
-   first, not a blanket `SET search_path = ''`.
-3. **Edge functions leak upstream error text** (`generate-ai-profile` returns the
+   first, not a blanket `SET search_path = ''`. (Down from 24: the functions
+   written during this session already pin it.)
+2. **Edge functions leak upstream error text** (`generate-ai-profile` returns the
    OpenRouter/Gemini error body to the caller) and **log full prompts and raw
    upstream response bodies**.
-4. **`fetchMetadata.ts` sends every submitted URL through `corsproxy.io`** — a
+3. **`fetchMetadata.ts` sends every submitted URL through `corsproxy.io`** — a
    third party learns every URL users submit. No timeout, no `response.ok` check.
-5. **`health.ts` treats a CORS-proxy outage as unhealthy**, so a proxy failure
+4. **`health.ts` treats a CORS-proxy outage as unhealthy**, so a proxy failure
    marks the whole database down.
 6. **`useModerationCounts` caches on a global react-query key** with no reset on
    `onAuthStateChange` — an admin who signs out can leave their pending counts
@@ -779,12 +856,6 @@ old cursor losing rows** so the failure mode is pinned rather than described.
 no Escape handling anywhere (every modal), nested `<button>` elements, icon-only
 buttons with no accessible name, hover-only reveals, and ~20 files hardcoding hex
 that breaks dark mode.
-| 9 | `reputation_score` self-assignable | ✅ | `useProfile.ts:157-167` types update as `Record<string, unknown>`; narrow to a `ProfileUpdate` type + revoke the column |
-| 10 | Email enumeration | ✅ | `get_creator_email` / `get_submitter_email` (`functions.sql:284, :390`) — `SECURITY DEFINER`, no authz, no `REVOKE FROM anon` |
-
-Findings #8/#9/#10 are all confirmed still open by the Supabase security
-advisor: `clone_public_collection`, `get_creator_email`, and
-`get_submitter_email` all still appear as callable by `anon`.
 
 **Invariant to apply throughout the DB work:** *a client may only ever write
 columns that describe content — never columns that describe trust* (counters,
