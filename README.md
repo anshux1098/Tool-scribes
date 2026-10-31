@@ -4,6 +4,7 @@
 
 <br />
 
+[![Live Demo](https://img.shields.io/badge/Live_Demo-tool--scribes.vercel.app-2D6A4F?logo=vercel&logoColor=white&style=flat-square)](https://tool-scribes.vercel.app)
 [![CI Pipeline](https://github.com/anshux1098/Tool-scribes/actions/workflows/ci.yml/badge.svg)](https://github.com/anshux1098/Tool-scribes/actions)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white&style=flat-square)
 ![React 18](https://img.shields.io/badge/React_18-20232A?logo=react&logoColor=61DAFB&style=flat-square)
@@ -13,7 +14,7 @@
 ![Vitest](https://img.shields.io/badge/Tested_with-Vitest-6E9F18?logo=vitest&logoColor=white&style=flat-square)
 [![License: MIT](https://img.shields.io/badge/License-MIT-2D6A4F.svg?style=flat-square)](./LICENSE)
 
-[**Why ToolScribe?**](#why-toolscribe) · [**Product Tour**](#product-tour) · [**Key Features**](#key-features) · [**Architecture & Security**](#architecture) · [**Quick Start**](#quick-start) · [**Contributing**](#contributing)
+[**🌐 Live Demo**](https://tool-scribes.vercel.app) · [**Why ToolScribe?**](#why-toolscribe) · [**Product Tour**](#product-tour) · [**Key Features**](#key-features) · [**Architecture & Security**](#architecture) · [**Quick Start**](#quick-start) · [**Contributing**](#contributing)
 
 <br />
 

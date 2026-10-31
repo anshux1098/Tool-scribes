@@ -26,7 +26,7 @@ const DEFAULT_DESC =
   "Tool Scribe is a curated library of developer tools — discover, save to your vault, build collections, and share recommendations with the community.";
 
 const DEFAULT_IMAGE =
-  "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/441269bb-e80c-42b8-a47f-b1a4dc687ee4/id-preview-ab86624c--4c86abac-57b9-45f1-8620-9a93697833da.lovable.app-1773756961775.png";
+  "https://raw.githubusercontent.com/anshux1098/Tool-scribes/main/docs/screenshots/discover-hero.png";
 
 export function SEO({
   title,
