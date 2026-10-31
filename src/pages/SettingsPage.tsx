@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Save, Loader2, User, AtSign, FileText, Moon, Sun, Bell, Trash2, Download, Eye, LogOut, Palette, Monitor } from 'lucide-react';
+import { Save, Loader2, User, AtSign, FileText, Moon, Sun, Trash2, Download, Eye, LogOut, Palette, Monitor } from 'lucide-react';
 import { useAuth, signOut } from '@/hooks/useAuth';
 import { useCurrentProfile } from '@/hooks/useProfile';
 import { useTheme } from 'next-themes';
@@ -9,12 +9,11 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { SEO } from '@/components/SEO';
 
-type SettingsSection = 'profile' | 'privacy' | 'notifications' | 'appearance' | 'account';
+type SettingsSection = 'profile' | 'privacy' | 'appearance' | 'account';
 
 const sections: { key: SettingsSection; label: string; icon: React.ElementType }[] = [
   { key: 'profile', label: 'Profile', icon: User },
   { key: 'privacy', label: 'Privacy', icon: Eye },
-  { key: 'notifications', label: 'Notifications', icon: Bell },
   { key: 'appearance', label: 'Appearance', icon: Palette },
   { key: 'account', label: 'Account', icon: Monitor },
 ];
@@ -34,15 +33,6 @@ export default function SettingsPage() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileError, setProfileError] = useState('');
 
-  function lsGet(key: string, def: string): string { try { return localStorage.getItem(key) ?? def; } catch { return def; } }
-  function lsSet(key: string, val: string) { try { localStorage.setItem(key, val); } catch { /* storage blocked */ } }
-
-  // Notification prefs (persisted to DB via profiles metadata or localStorage)
-  const [notifyReviewResponses, setNotifyReviewResponses] = useState(() => lsGet('notifyReviewResponses', 'true') === 'true');
-  const [notifyNewFollowers, setNotifyNewFollowers] = useState(() => lsGet('notifyNewFollowers', 'true') === 'true');
-  const [notifyWeeklyDigest, setNotifyWeeklyDigest] = useState(() => lsGet('notifyWeeklyDigest', 'false') === 'true');
-  const [notifyCollectionUpdates, setNotifyCollectionUpdates] = useState(() => lsGet('notifyCollectionUpdates', 'true') === 'true');
-  const [notifyApprovals, setNotifyApprovals] = useState(() => lsGet('notifyApprovals', 'true') === 'true');
 
   // Delete account
   const [deleting, setDeleting] = useState(false);
@@ -57,12 +47,6 @@ export default function SettingsPage() {
     }
   }, [profile]);
 
-  // Persist notification prefs
-  useEffect(() => { lsSet('notifyReviewResponses', String(notifyReviewResponses)); }, [notifyReviewResponses]);
-  useEffect(() => { lsSet('notifyNewFollowers', String(notifyNewFollowers)); }, [notifyNewFollowers]);
-  useEffect(() => { lsSet('notifyWeeklyDigest', String(notifyWeeklyDigest)); }, [notifyWeeklyDigest]);
-  useEffect(() => { lsSet('notifyCollectionUpdates', String(notifyCollectionUpdates)); }, [notifyCollectionUpdates]);
-  useEffect(() => { lsSet('notifyApprovals', String(notifyApprovals)); }, [notifyApprovals]);
 
   const handleSaveProfile = async () => {
     if (!username.trim()) { setProfileError('Username is required for a public profile.'); return; }
@@ -217,32 +201,6 @@ export default function SettingsPage() {
           </button>
         </div>
         <p className="text-[11px] text-tv-text-s font-mono pt-2 border-t border-tv-border">Reviews you write are always public on tool pages.</p>
-      </div>
-    ),
-    notifications: (
-      <div className="space-y-4">
-        {[
-          { label: 'Review responses', desc: 'When someone replies to your review', key: 'notifyReviewResponses', state: notifyReviewResponses, set: setNotifyReviewResponses },
-          { label: 'New followers', desc: 'When someone follows you', key: 'notifyNewFollowers', state: notifyNewFollowers, set: setNotifyNewFollowers },
-          { label: 'Collection updates', desc: 'When a collection you follow is updated', key: 'notifyCollectionUpdates', state: notifyCollectionUpdates, set: setNotifyCollectionUpdates },
-          { label: 'Tool approvals', desc: 'When your tool submission is approved', key: 'notifyApprovals', state: notifyApprovals, set: setNotifyApprovals },
-          { label: 'Weekly digest', desc: 'Weekly summary of activity in your feed', key: 'notifyWeeklyDigest', state: notifyWeeklyDigest, set: setNotifyWeeklyDigest },
-        ].map(item => (
-          <div key={item.key} className="flex items-center justify-between py-2">
-            <div>
-              <p className="text-[14px] text-tv-text font-medium">{item.label}</p>
-              <p className="text-[11px] text-tv-text-s font-mono mt-0.5">{item.desc}</p>
-            </div>
-            <button
-              onClick={() => item.set(!item.state)}
-              role="switch" aria-checked={item.state}
-              className={`relative w-10 h-5 rounded-full transition-colors duration-150 flex-shrink-0 ${item.state ? 'bg-tv-primary' : 'bg-s3'}`}
-            >
-              <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-150 ${item.state ? 'translate-x-5' : ''}`} />
-            </button>
-          </div>
-        ))}
-        <p className="text-[11px] text-tv-text-s font-mono pt-2 border-t border-tv-border">Notification emails are sent to {user?.email}</p>
       </div>
     ),
     appearance: (
