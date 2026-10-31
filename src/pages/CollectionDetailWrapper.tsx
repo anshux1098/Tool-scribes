@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import Navbar from '@/components/Navbar';
-import AddToolModal from '@/components/AddToolModal';
 import AuthModal from '@/components/AuthModal';
 import SubmitToolModal from '@/components/SubmitToolModal';
 import CollectionPage from '@/pages/CollectionPage';
@@ -12,7 +11,7 @@ import { useSearch } from '@/hooks/useSearch';
 
 export default function CollectionDetailWrapper() {
   const [activeTab, setActiveTab] = useState<'vault' | 'discover'>('vault');
-  const [modalOpen, setModalOpen] = useState(false);
+  
   const [authOpen, setAuthOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [submitOpen, setSubmitOpen] = useState(false);
@@ -34,7 +33,7 @@ export default function CollectionDetailWrapper() {
 
   const handleAddTool = () => {
     if (!user) { setAuthOpen(true); return; }
-    setModalOpen(true);
+    setSubmitOpen(true);
   };
 
   const handleRemoveFromCollection = async (collectionNumId: number, toolUuid: string) => {
@@ -62,7 +61,6 @@ export default function CollectionDetailWrapper() {
         loading={loading}
         onEnsureToolsLoaded={ensureToolsLoaded}
       />
-      <AddToolModal open={modalOpen} onClose={() => setModalOpen(false)} onAdd={() => {}} />
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
       <SubmitToolModal open={submitOpen} onClose={() => setSubmitOpen(false)} />
       <SearchEverywhere

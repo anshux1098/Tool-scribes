@@ -1,19 +1,19 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
 import AuthModal from '@/components/AuthModal';
+import SubmitToolModal from '@/components/SubmitToolModal';
 import AdminTagModeration from '@/components/AdminTagModeration';
 import { useAuth } from '@/hooks/useAuth';
 
 export default function AdminTagModerationWrapper() {
   const [activeTab, setActiveTab] = useState<'vault' | 'discover'>('discover');
   const [authOpen, setAuthOpen] = useState(false);
+  const [submitOpen, setSubmitOpen] = useState(false);
   const { user } = useAuth();
-  const navigate = useNavigate();
 
   const handleAddTool = () => {
     if (!user) { setAuthOpen(true); return; }
-    navigate('/?add=1');
+    setSubmitOpen(true);
   };
 
   return (
@@ -22,10 +22,12 @@ export default function AdminTagModerationWrapper() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         onAddTool={handleAddTool}
+        onSubmitTool={() => setSubmitOpen(true)}
         onAuthClick={() => setAuthOpen(true)}
       />
       <AdminTagModeration />
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
+      <SubmitToolModal open={submitOpen} onClose={() => setSubmitOpen(false)} />
     </div>
   );
 }

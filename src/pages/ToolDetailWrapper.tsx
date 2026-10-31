@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
-import AddToolModal from '@/components/AddToolModal';
 import AuthModal from '@/components/AuthModal';
 import AddToCollectionModal from '@/components/AddToCollectionModal';
 import SubmitToolModal from '@/components/SubmitToolModal';
@@ -23,7 +22,7 @@ import { toast } from 'sonner';
 export default function ToolDetailWrapper() {
   const { id } = useParams<{ id: string }>();
   const [activeTab, setActiveTab] = useState<'vault' | 'discover'>('vault');
-  const [modalOpen, setModalOpen] = useState(false);
+  
   const [authOpen, setAuthOpen] = useState(false);
   const [collectionModalOpen, setCollectionModalOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -32,7 +31,7 @@ export default function ToolDetailWrapper() {
   const [toolCollectionActivities, setToolCollectionActivities] = useState<{ collectionId: number; collectionName: string; addedAt: string }[]>([]);
   const [suggestModalOpen, setSuggestModalOpen] = useState(false);
   const { user, isAdmin, isModerator } = useAuth();
-  const { tools, loading, addTool, toggleUpvote, saveToVault, toggleFavorite, removeFromVault, updateNotes, addTag, removeTag, recordVisit, updateScreenshot, updateAiProfile, fetchSingleTool } = useTools();
+  const { tools, loading, toggleUpvote, saveToVault, toggleFavorite, removeFromVault, updateNotes, addTag, removeTag, recordVisit, updateScreenshot, updateAiProfile, fetchSingleTool } = useTools();
   const { collections, addToolToCollection, removeToolFromCollection, createCollection } = useCollections();
   const search = useSearch();
 
@@ -113,7 +112,7 @@ export default function ToolDetailWrapper() {
 
   const handleAddTool = () => {
     if (!user) { setAuthOpen(true); return; }
-    setModalOpen(true);
+    setSubmitOpen(true);
   };
 
   const handleAddToCollection = useCallback((collectionId: number) => {
@@ -214,7 +213,6 @@ export default function ToolDetailWrapper() {
           createCollection(name, desc);
         }}
       />
-      <AddToolModal open={modalOpen} onClose={() => setModalOpen(false)} onAdd={addTool} />
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
       <SubmitToolModal open={submitOpen} onClose={() => setSubmitOpen(false)} />
       {currentTool && (

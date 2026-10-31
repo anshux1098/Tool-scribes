@@ -7,7 +7,6 @@ import { useCollections } from '@/hooks/useCollections';
 import { useSearch } from '@/hooks/useSearch';
 
 /* Lazy-loaded heavy components */
-const AddToolModal = lazy(() => import('@/components/AddToolModal'));
 const AuthModal = lazy(() => import('@/components/AuthModal'));
 const CreateCollectionModal = lazy(() => import('@/components/CreateCollectionModal'));
 const SubmitToolModal = lazy(() => import('@/components/SubmitToolModal'));
@@ -25,7 +24,7 @@ type Tabs = 'vault' | 'discover';
 
 export default function Index() {
   const [activeTab, setActiveTab] = useState<Tabs>('discover');
-  const [modalOpen, setModalOpen] = useState(false);
+  
   const [authOpen, setAuthOpen] = useState(false);
   const [collectionModalOpen, setCollectionModalOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -33,13 +32,13 @@ export default function Index() {
   const [submitOpen, setSubmitOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const { user } = useAuth();
-  const { tools, loading, error, addTool, toggleFavorite, toggleUpvote, saveToVault, removeFromVault, refetch } = useTools();
+  const { tools, loading, error, toggleFavorite, toggleUpvote, saveToVault, removeFromVault, refetch } = useTools();
   const { collections, loading: colsLoading, createCollection } = useCollections();
   const search = useSearch();
 
   const handleAddTool = () => {
     if (!user) { setAuthOpen(true); return; }
-    setModalOpen(true);
+    setSubmitOpen(true);
   };
 
   useEffect(() => {
@@ -107,10 +106,6 @@ export default function Index() {
       ) : (
         <DiscoverPage tools={tools} onUpvote={toggleUpvote} onSave={saveToVault} onAddTool={handleAddTool} loading={loading} />
       )}
-
-      <Suspense fallback={<ModalFallback />}>
-        {modalOpen && <AddToolModal open={modalOpen} onClose={() => setModalOpen(false)} onAdd={addTool} />}
-      </Suspense>
       <Suspense fallback={<ModalFallback />}>
         {authOpen && <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />}
       </Suspense>

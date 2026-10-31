@@ -13,7 +13,7 @@ type Tab = 'vault' | 'discover';
 interface NavbarProps {
   activeTab: Tab;
   onTabChange: (tab: Tab) => void;
-  onAddTool: () => void;
+  onAddTool?: () => void;
   onAuthClick: () => void;
   onSearchClick?: () => void;
   onAskClick?: () => void;
@@ -109,14 +109,6 @@ export default function Navbar({ activeTab, onTabChange, onAddTool, onAuthClick,
           <>
             <div className="mt-3 px-5 py-2 text-[10px] font-mono text-tv-text-m uppercase tracking-widest">Community</div>
             {nav('Following', '/following', location.pathname === '/following')}
-            {onSubmitTool && (
-              <button
-                onClick={() => { close(); onSubmitTool(); }}
-                className="w-full text-left px-5 py-3 text-[14px] font-medium text-tv-text hover:bg-s2 transition-colors"
-              >
-                Submit Tool
-              </button>
-            )}
           </>
         )}
 
@@ -201,17 +193,6 @@ export default function Navbar({ activeTab, onTabChange, onAddTool, onAuthClick,
             </button>
           );
         })}
-
-        {/* Submit tool link */}
-        {onSubmitTool && (
-          <button
-            onClick={onSubmitTool}
-            className="ml-3 px-3 py-1.5 rounded-md text-[13px] font-medium tracking-wide uppercase text-tv-text-s hover:text-tv-primary transition-all duration-150 flex items-center gap-1.5 whitespace-nowrap"
-          >
-            <Send size={12} />
-            Submit
-          </button>
-        )}
 
         {/* Collections link */}
         <button
@@ -389,14 +370,14 @@ export default function Navbar({ activeTab, onTabChange, onAddTool, onAuthClick,
           </div>
         )}
 
-        {/* Add tool — only when signed in */}
-        {user && (
+        {/* Submit tool — only when signed in */}
+        {user && (onSubmitTool || onAddTool) && (
           <button
-            onClick={onAddTool}
+            onClick={onSubmitTool || onAddTool}
             className="hidden sm:flex items-center gap-1.5 px-3.5 py-1.5 border border-tv-border bg-surface text-tv-text text-[13px] font-medium rounded-lg transition-all duration-150 hover:border-tv-primary hover:text-tv-primary"
           >
             <Plus size={14} />
-            Add tool
+            Submit tool
           </button>
         )}
 
@@ -525,11 +506,11 @@ export default function Navbar({ activeTab, onTabChange, onAddTool, onAuthClick,
             {user ? (
               <div className="px-5 py-4 space-y-3">
                 <button
-                  onClick={() => { closeDrawer(); onAddTool(); }}
+                  onClick={() => { closeDrawer(); (onSubmitTool || onAddTool)?.(); }}
                   className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-tv-border bg-surface text-tv-text text-[13px] font-medium rounded-lg hover:bg-s2 transition-colors"
                 >
                   <Plus size={14} />
-                  Add tool
+                  Submit tool
                 </button>
                 <button
                   onClick={() => { closeDrawer(); signOut(); }}
