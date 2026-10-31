@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, ExternalLink, Trash2, Edit3, Globe, Lock, Copy, Star, Loader2, Bookmark } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useCollections } from '@/hooks/useCollections';
+import { useCurrentProfile } from '@/hooks/useProfile';
 import { toast } from 'sonner';
 import { SEO } from '@/components/SEO';
 
@@ -11,12 +12,13 @@ export default function MyCollectionsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { collections, loading, createCollection, renameCollection, deleteCollection, togglePublic } = useCollections();
+  const { profile, updateProfile } = useCurrentProfile();
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState('');
-  const [featured, setFeatured] = useState<string | null>(() => { try { return localStorage.getItem('featuredCollection'); } catch { return null; } });
+  const featured = profile?.featuredCollectionId ?? null;
 
   const handleCreate = async () => {
     if (!newName.trim()) return;
@@ -45,12 +47,14 @@ export default function MyCollectionsPage() {
     toast.success('Collection link copied');
   };
 
-  const handleToggleFeatured = (uuid: string) => {
+  const handleToggleFeatured = async (uuid: string) => {
     const next = featured === uuid ? null : uuid;
-    setFeatured(next);
-    if (next) { try { localStorage.setItem('featuredCollection', next); } catch { /* storage blocked */ } }
-    else { try { localStorage.removeItem('featuredCollection'); } catch { /* storage blocked */ } }
-    toast.success(featured === uuid ? 'Unfeatured collection' : 'Featured collection set');
+    const ok = await updateProfile({ featured_collection_id: next });
+    if (ok) {
+      toast.success(featured === uuid ? 'Unfeatured collection from profile' : 'Featured collection on profile');
+    } else {
+      toast.error('Failed to update featured collection');
+    }
   };
 
   if (!user) {
