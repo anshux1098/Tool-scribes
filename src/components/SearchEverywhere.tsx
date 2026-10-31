@@ -40,7 +40,7 @@ export default function SearchEverywhere({
   const handleSelect = (item: SearchResultItem) => {
     onClose();
     if (item.scope === 'collections') {
-      navigate(`/collections/${item.id}`);
+      navigate(item._uuid ? `/c/${item._uuid}` : `/collections/${item.id}`);
     } else {
       navigate(`/tool/${item.id}`);
     }

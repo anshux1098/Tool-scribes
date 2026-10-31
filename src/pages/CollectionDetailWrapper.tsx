@@ -1,79 +1,61 @@
-import { useState, useEffect } from 'react';
-import Navbar from '@/components/Navbar';
-import AuthModal from '@/components/AuthModal';
-import SubmitToolModal from '@/components/SubmitToolModal';
-import CollectionPage from '@/pages/CollectionPage';
-import SearchEverywhere from '@/components/SearchEverywhere';
-import { useTools } from '@/hooks/useTools';
-import { useAuth } from '@/hooks/useAuth';
+import { useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import { useCollections } from '@/hooks/useCollections';
-import { useSearch } from '@/hooks/useSearch';
+import { supabase } from '@/lib/supabase';
+import { hashId } from '@/lib/hashId';
 
+/**
+ * Route forwarder for legacy `/collections/:id`.
+ * Resolves numeric collection IDs or legacy links and redirects to canonical `/c/:uuid`.
+ */
 export default function CollectionDetailWrapper() {
-  const [activeTab, setActiveTab] = useState<'vault' | 'discover'>('vault');
-  
-  const [authOpen, setAuthOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [submitOpen, setSubmitOpen] = useState(false);
-  const { user } = useAuth();
-  const search = useSearch();
-  const { tools, toggleFavorite, ensureToolsLoaded } = useTools();
-  const { collections, loading, renameCollection, deleteCollection, removeToolFromCollection, togglePublic } = useCollections();
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { collections, loading: collectionsLoading } = useCollections();
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setSearchOpen(prev => !prev);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, []);
+    if (!id) {
+      navigate('/collections', { replace: true });
+      return;
+    }
 
-  const handleAddTool = () => {
-    if (!user) { setAuthOpen(true); return; }
-    setSubmitOpen(true);
-  };
+    // Direct UUID match
+    if (id.includes('-') && id.length >= 32) {
+      navigate(`/c/${id}`, { replace: true });
+      return;
+    }
 
-  const handleRemoveFromCollection = async (collectionNumId: number, toolUuid: string) => {
-    removeToolFromCollection(collectionNumId, toolUuid);
-  };
+    const numId = Number(id);
+    const found = collections.find(c => c.id === numId);
+    if (found?._uuid) {
+      navigate(`/c/${found._uuid}`, { replace: true });
+      return;
+    }
+
+    if (!collectionsLoading) {
+      (async () => {
+        try {
+          const { data } = await supabase.from('collections').select('id');
+          const match = (data ?? []).find(r => hashId(r.id) === numId);
+          if (match?.id) {
+            navigate(`/c/${match.id}`, { replace: true });
+          } else {
+            navigate('/collections', { replace: true });
+          }
+        } catch {
+          navigate('/collections', { replace: true });
+        }
+      })();
+    }
+  }, [id, collections, collectionsLoading, navigate]);
 
   return (
-    <div className="min-h-screen bg-bg">
-      <Navbar
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        onAddTool={handleAddTool}
-        onAuthClick={() => setAuthOpen(true)}
-        onSearchClick={() => setSearchOpen(true)}
-        onSubmitTool={() => setSubmitOpen(true)}
-      />
-      <CollectionPage
-        tools={tools}
-        collections={collections}
-        onRename={renameCollection}
-        onDelete={deleteCollection}
-        onToggleFavorite={toggleFavorite}
-        onRemoveFromCollection={handleRemoveFromCollection}
-        onTogglePublic={togglePublic}
-        loading={loading}
-        onEnsureToolsLoaded={ensureToolsLoaded}
-      />
-      <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
-      <SubmitToolModal open={submitOpen} onClose={() => setSubmitOpen(false)} />
-      <SearchEverywhere
-        open={searchOpen}
-        onClose={() => setSearchOpen(false)}
-        query={search.query}
-        onQueryChange={search.setQuery}
-        results={search.results}
-        loading={search.loading}
-        hasQuery={search.hasQuery}
-        category={search.filters.category}
-        onCategoryChange={search.updateCategory}
-      />
+    <div className="min-h-screen bg-bg flex items-center justify-center">
+      <div className="flex flex-col items-center gap-3">
+        <Loader2 className="w-6 h-6 animate-spin text-tv-primary" />
+        <span className="text-[13px] text-tv-text-m font-mono">Loading collection...</span>
+      </div>
     </div>
   );
 }

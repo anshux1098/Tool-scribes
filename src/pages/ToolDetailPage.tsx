@@ -506,7 +506,7 @@ export default function ToolDetailPage({
                   <p className="text-[12px] text-tv-text-s font-mono">Not saved in any collection.</p>
                 ) : (
                   collections.filter(c => collectionIds.includes(c.id)).map(col => (
-                    <button key={col.id} onClick={() => navigate(`/collections/${col.id}`)}
+                    <button key={col.id} onClick={() => navigate(col._uuid ? `/c/${col._uuid}` : `/collections/${col.id}`)}
                       className="flex items-center gap-2.5 w-full px-3 py-2 rounded-lg hover:bg-s2 transition-colors text-left"
                     >
                       <Bookmark size={12} className="text-tv-primary flex-shrink-0" />

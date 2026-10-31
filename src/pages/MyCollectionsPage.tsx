@@ -190,7 +190,7 @@ export default function MyCollectionsPage() {
                         <div className="flex items-center gap-2.5">
                           <h3
                             className="text-[17px] font-semibold text-tv-text cursor-pointer hover:text-tv-primary transition-colors"
-                            onClick={() => navigate(`/collections/${col.id}`)}
+                            onClick={() => navigate(`/c/${col._uuid}`)}
                           >
                             {col.name}
                           </h3>
@@ -226,7 +226,7 @@ export default function MyCollectionsPage() {
                         <Star size={14} fill={isFeatured ? 'currentColor' : 'none'} />
                       </button>
                       <button
-                        onClick={() => navigate(`/collections/${col.id}`)}
+                        onClick={() => navigate(`/c/${col._uuid}`)}
                         className="p-2.5 rounded-lg hover:bg-s2 text-tv-text-s hover:text-tv-primary transition-colors"
                         title="Open collection"
                       >
