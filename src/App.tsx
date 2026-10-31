@@ -8,6 +8,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import { setSearchEngine, SimpleSearchEngine } from "@/lib/search";
 import { LazyFallback } from "@/components/LazyFallback";
+import { AuthProvider } from "@/hooks/useAuth";
 
 /* ── Main pages — lazy loaded ──────────────────────────────────────── */
 const Index = lazy(() => import("./pages/Index.tsx"));
@@ -51,8 +52,9 @@ function App() {
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <Sonner />
-          <BrowserRouter>
+          <AuthProvider>
+            <Sonner />
+            <BrowserRouter>
             <a
               href="#main-content"
               className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[200] focus:px-4 focus:py-2 focus:bg-tv-primary focus:text-white focus:rounded-lg focus:text-[13px] focus:font-medium"
@@ -94,6 +96,7 @@ function App() {
               </div>
             </ErrorBoundary>
           </BrowserRouter>
+          </AuthProvider>
         </TooltipProvider>
       </QueryClientProvider>
     </ThemeProvider>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, createContext, useContext, ReactNode, useMemo } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
@@ -10,22 +10,22 @@ export interface AuthState {
   isModerator: boolean;
 }
 
-export function useAuth(): AuthState {
+const defaultAuthState: AuthState = {
+  user: null,
+  session: null,
+  loading: true,
+  isAdmin: false,
+  isModerator: false,
+};
+
+const AuthContext = createContext<AuthState | null>(null);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isModerator, setIsModerator] = useState(false);
-
-  const checkRoles = async () => {
-    if (!isSupabaseConfigured || !user) { setIsAdmin(false); setIsModerator(false); return; }
-    const [adminRes, modRes] = await Promise.all([
-      supabase.rpc('is_admin'),
-      supabase.rpc('is_moderator'),
-    ]);
-    setIsAdmin(!!adminRes.data);
-    setIsModerator(!!modRes.data);
-  };
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -37,7 +37,10 @@ export function useAuth(): AuthState {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
-    }).catch((e) => console.error('[useAuth] getSession failed:', e));
+    }).catch((e) => {
+      console.error('[useAuth] getSession failed:', e);
+      setLoading(false);
+    });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
@@ -49,10 +52,50 @@ export function useAuth(): AuthState {
   }, []);
 
   useEffect(() => {
-    checkRoles();
+    let active = true;
+    if (!isSupabaseConfigured || !user) {
+      setIsAdmin(false);
+      setIsModerator(false);
+      return;
+    }
+
+    Promise.all([
+      supabase.rpc('is_admin'),
+      supabase.rpc('is_moderator'),
+    ]).then(([adminRes, modRes]) => {
+      if (active) {
+        setIsAdmin(!!adminRes.data);
+        setIsModerator(!!modRes.data);
+      }
+    }).catch((e) => {
+      console.error('[useAuth] role check failed:', e);
+      if (active) {
+        setIsAdmin(false);
+        setIsModerator(false);
+      }
+    });
+
+    return () => { active = false; };
   }, [user]);
 
-  return { user, session, loading, isAdmin, isModerator };
+  const value = useMemo(() => ({
+    user,
+    session,
+    loading,
+    isAdmin,
+    isModerator,
+  }), [user, session, loading, isAdmin, isModerator]);
+
+  return React.createElement(AuthContext.Provider, { value }, children);
+}
+
+export function useAuth(): AuthState {
+  const context = useContext(AuthContext);
+  if (context) {
+    return context;
+  }
+  // Safe fallback for tests or isolated components rendered outside AuthProvider
+  return defaultAuthState;
 }
 
 export async function signInWithEmail(email: string, password: string) {

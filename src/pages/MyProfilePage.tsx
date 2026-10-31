@@ -14,6 +14,7 @@ import ProfileSettingsModal from '@/components/ProfileSettingsModal';
 import CuratorBadge from '@/components/CuratorBadge';
 import { hashId } from '@/lib/hashId';
 import { SEO } from '@/components/SEO';
+import { toast } from 'sonner';
 
 function collectionCoverGradient(name: string): string {
   const colors = [
@@ -580,7 +581,13 @@ export default function MyProfilePage() {
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.04, duration: 0.25 }}
-                  onClick={() => navigate(`/tool/${item.toolId}`)}
+                  onClick={() => {
+                    if (item.toolId) {
+                      navigate(`/tool/${item.toolId}`);
+                    } else {
+                      toast.info('This tool is no longer available');
+                    }
+                  }}
                   className="flex flex-col bg-surface border-2 border-tv-border rounded-xl p-6 text-left transition-all duration-200 hover:-translate-x-1 hover:-translate-y-1 hover:shadow-brutal-hover shadow-brutal"
                 >
                   <div className="flex items-center gap-3 mb-4">
