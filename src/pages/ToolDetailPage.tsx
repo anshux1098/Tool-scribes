@@ -25,6 +25,7 @@ interface ToolDetailPageProps {
   onRecordVisit: (id: number) => void;
   collections?: Collection[];
   collectionIds?: number[];
+  collectionActivities?: { collectionId: number; collectionName: string; addedAt: string }[];
   onAddToCollection?: () => void;
   healthStatus?: string;
   reviews?: Review[];
@@ -70,7 +71,7 @@ const SUGGESTED_PROMPTS = [
 
 export default function ToolDetailPage({
   tools, onSave, onToggleFavorite, onRemoveFromVault, onUpdateNotes, onAddTag, onRemoveTag, onRecordVisit, healthStatus,
-  collections, collectionIds, onAddToCollection,
+  collections, collectionIds, collectionActivities, onAddToCollection,
   reviews, myReview, reviewCount, onSubmitReview, onDeleteReview,
   canUpload, onUpdateScreenshot, isAdmin, onRegenerateAiProfile,
   loading
@@ -148,16 +149,28 @@ export default function ToolDetailPage({
     if (!tool) return [];
     return [
       { type: 'added' as const, label: 'Added to vault', timestamp: new Date(tool.addedAt) },
-      ...(Array.isArray(collectionIds) && collectionIds.length > 0
-        ? collectionIds.map(() => ({ type: 'collected' as const, label: 'Added to a collection', timestamp: new Date() }))
+      ...(Array.isArray(collectionActivities) && collectionActivities.length > 0
+        ? collectionActivities.map(ca => ({
+            type: 'collected' as const,
+            label: `Added to ${ca.collectionName}`,
+            timestamp: new Date(ca.addedAt),
+          }))
+        : (Array.isArray(collectionIds) && collectionIds.length > 0 && collections)
+        ? collections
+            .filter(c => collectionIds.includes(c.id))
+            .map(c => ({
+              type: 'collected' as const,
+              label: `Added to ${c.name}`,
+              timestamp: new Date(c.updatedAt || tool.addedAt),
+            }))
         : []
       ),
       ...(tool.lastVisited
-        ? [{ type: 'visited' as const, label: `Visited ${formatDistanceToNow(tool.lastVisited, { addSuffix: true })}`, timestamp: new Date(tool.lastVisited) }]
+        ? [{ type: 'visited' as const, label: 'Visited', timestamp: new Date(tool.lastVisited) }]
         : []
       ),
     ].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()).slice(0, 8);
-  }, [collectionIds, tool]);
+  }, [collectionActivities, collectionIds, collections, tool]);
 
   // #22: `tools` is [] until the query resolves, so bailing on `!tool` alone
   // showed "Tool not found" on every /tool/:id deep link and back-navigation

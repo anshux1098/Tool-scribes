@@ -29,6 +29,7 @@ export default function ToolDetailWrapper() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [toolCollectionIds, setToolCollectionIds] = useState<number[]>([]);
+  const [toolCollectionActivities, setToolCollectionActivities] = useState<{ collectionId: number; collectionName: string; addedAt: string }[]>([]);
   const [suggestModalOpen, setSuggestModalOpen] = useState(false);
   const { user, isAdmin, isModerator } = useAuth();
   const { tools, loading, addTool, toggleUpvote, saveToVault, toggleFavorite, removeFromVault, updateNotes, addTag, removeTag, recordVisit, updateScreenshot, updateAiProfile, fetchSingleTool } = useTools();
@@ -72,21 +73,40 @@ export default function ToolDetailWrapper() {
   }, []);
 
   useEffect(() => {
-    if (!currentTool?._uuid || !user) { setToolCollectionIds([]); return; }
+    if (!currentTool?._uuid || !user) {
+      setToolCollectionIds([]);
+      setToolCollectionActivities([]);
+      return;
+    }
     void Promise.resolve(
       supabase
         .from('collection_tools')
-        .select('collection_id')
+        .select('collection_id, created_at')
         .eq('tool_id', currentTool._uuid)
     )
       .then(({ data }) => {
         if (!mountedRef.current) return;
-        if (!data) { setToolCollectionIds([]); return; }
-        const colUuids = new Set(data.map(d => d.collection_id as string));
-        const ids = collections
-          .filter(c => colUuids.has(c._uuid))
-          .map(c => c.id);
+        if (!data) {
+          setToolCollectionIds([]);
+          setToolCollectionActivities([]);
+          return;
+        }
+        const colMap = new Map(collections.map(c => [c._uuid, c]));
+        const ids: number[] = [];
+        const activities: { collectionId: number; collectionName: string; addedAt: string }[] = [];
+        for (const row of data as Array<{ collection_id: string; created_at?: string }>) {
+          const col = colMap.get(row.collection_id);
+          if (col) {
+            ids.push(col.id);
+            activities.push({
+              collectionId: col.id,
+              collectionName: col.name,
+              addedAt: row.created_at || new Date().toISOString(),
+            });
+          }
+        }
         setToolCollectionIds(ids);
+        setToolCollectionActivities(activities);
       })
       .catch((e) => console.error('[ToolDetailWrapper] fetch collection IDs failed:', e));
   }, [currentTool?._uuid, user, collections]);
@@ -100,12 +120,21 @@ export default function ToolDetailWrapper() {
     if (!currentTool?._uuid) return;
     addToolToCollection(collectionId, currentTool._uuid);
     setToolCollectionIds(prev => [...prev, collectionId]);
-  }, [currentTool?._uuid, addToolToCollection]);
+    const col = collections.find(c => c.id === collectionId);
+    if (col) {
+      setToolCollectionActivities(prev => [...prev, {
+        collectionId: col.id,
+        collectionName: col.name,
+        addedAt: new Date().toISOString(),
+      }]);
+    }
+  }, [currentTool?._uuid, addToolToCollection, collections]);
 
   const handleRemoveFromCollection = useCallback((collectionId: number) => {
     if (!currentTool?._uuid) return;
     removeToolFromCollection(collectionId, currentTool._uuid);
     setToolCollectionIds(prev => prev.filter(id => id !== collectionId));
+    setToolCollectionActivities(prev => prev.filter(ca => ca.collectionId !== collectionId));
   }, [currentTool?._uuid, removeToolFromCollection]);
 
   const handleRegenerateAiProfile = useCallback(async (numId: number) => {
@@ -144,6 +173,7 @@ export default function ToolDetailWrapper() {
         onRecordVisit={recordVisit}
         collections={collections}
         collectionIds={toolCollectionIds}
+        collectionActivities={toolCollectionActivities}
         healthStatus={healthStatus}
         reviews={reviews}
         myReview={myReview}
