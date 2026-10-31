@@ -145,6 +145,7 @@ export default function DiscoverPage({ tools, onUpvote, onSave, onAddTool, loadi
     return [...tools].sort((a, b) => (trendingScores.get(b.id) || 0) - (trendingScores.get(a.id) || 0));
   }, [tools, trendingScores]);
 
+  const featured = sortedByTrending[0] ?? null;
 
   const trending = useMemo(() => {
     return sortedByTrending
@@ -169,8 +170,6 @@ export default function DiscoverPage({ tools, onUpvote, onSave, onAddTool, loadi
       .filter(t => !trendingIds.has(t.id) && !risingIds.has(t.id))
       .slice(0, 8);
   }, [tools, trendingIds, risingIds]);
-
-  const featured = sortedByTrending[0] ?? null;
 
   const filtered = useMemo(() => {
     let result = [...tools];
