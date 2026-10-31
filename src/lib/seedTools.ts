@@ -107,87 +107,61 @@ export async function seedVaultTools(
   }
 
   const seedTools = Array.from(toolMap.values());
-
-  // Step 1: Find which tools already exist in the DB by URL
   const urls = seedTools.map(t => t.url);
-  let existingTools;
+  const names = seedTools.map(t => t.name);
+
+  // Step 1: Query tools already existing in database by URL or name
+  let toolIds: string[] = [];
   try {
-    const res = await supabase
+    const { data: matchedByUrl } = await supabase
       .from('tools')
-      .select('id, url')
+      .select('id')
       .in('url', urls);
-    existingTools = res.data;
-  } catch (e) { console.error('[seedTools] fetch existing tools failed:', e); return { count: 0, error: 'Failed to check existing tools' }; }
 
-  const existingUrlMap = new Map<string, string>();
-  if (existingTools) {
-    for (const t of existingTools) {
-      existingUrlMap.set(t.url, t.id);
+    const { data: matchedByName } = await supabase
+      .from('tools')
+      .select('id')
+      .in('name', names);
+
+    const idSet = new Set<string>();
+    for (const t of matchedByUrl ?? []) idSet.add(t.id);
+    for (const t of matchedByName ?? []) idSet.add(t.id);
+    toolIds = Array.from(idSet);
+  } catch (e) {
+    console.error('[seedTools] query existing tools failed:', e);
+    return { count: 0, error: 'Failed to check starter tools' };
+  }
+
+  if (toolIds.length === 0) {
+    return { count: 0 };
+  }
+
+  // Step 2: Filter out tools already saved in user's vault
+  try {
+    const { data: existingVault } = await supabase
+      .from('vault_items')
+      .select('tool_id')
+      .eq('user_id', userId)
+      .in('tool_id', toolIds);
+
+    const existingVaultSet = new Set<string>();
+    if (existingVault) {
+      for (const v of existingVault) existingVaultSet.add(v.tool_id);
     }
+
+    const newVaultItems = toolIds
+      .filter(id => !existingVaultSet.has(id))
+      .map(toolId => ({ user_id: userId, tool_id: toolId }));
+
+    // Step 3: Batch insert vault_items for user
+    if (newVaultItems.length > 0) {
+      const { error } = await supabase.from('vault_items').insert(newVaultItems);
+      if (error) return { count: 0, error: error.message };
+    }
+
+    return { count: newVaultItems.length };
+  } catch (e) {
+    console.error('[seedTools] seed vault_items failed:', e);
+    return { count: 0, error: 'Failed to populate vault' };
   }
-
-  // Step 2: Insert tools that don't exist yet
-  const toolIds: string[] = [];
-  const inserts = seedTools
-    .filter(t => !existingUrlMap.has(t.url))
-    .map(t => ({
-      name: t.name,
-      url: t.url,
-      description: t.description,
-      category: t.category,
-      icon: t.icon,
-      favicon: `https://www.google.com/s2/favicons?domain=${new URL(t.url).hostname}&sz=64`,
-      og_image: '',
-      price_model: 'free' as const,
-      is_open_source: false,
-      requires_login: false,
-      added_by: userId,
-      upvotes: 0,
-    }));
-
-  if (inserts.length > 0) {
-    try {
-      const { data: inserted } = await supabase
-        .from('tools')
-        .insert(inserts)
-        .select('id, url');
-
-      if (inserted) {
-        for (const t of inserted) {
-          toolIds.push(t.id);
-          existingUrlMap.set(t.url, t.id);
-        }
-      }
-    } catch (e) { console.error('[seedTools] insert tools failed:', e); return { count: 0, error: 'Failed to insert tools' }; }
-  }
-
-  // Collect all tool UUIDs (existing + newly inserted)
-  for (const t of seedTools) {
-    const uuid = existingUrlMap.get(t.url);
-    if (uuid) toolIds.push(uuid);
-  }
-
-  // Step 3: Filter out already-saved vault items
-  const { data: existingVault } = await supabase
-    .from('vault_items')
-    .select('tool_id')
-    .eq('user_id', userId)
-    .in('tool_id', toolIds);
-
-  const existingVaultSet = new Set<string>();
-  if (existingVault) {
-    for (const v of existingVault) existingVaultSet.add(v.tool_id);
-  }
-
-  const newVaultItems = toolIds
-    .filter(id => !existingVaultSet.has(id))
-    .map(toolId => ({ user_id: userId, tool_id: toolId }));
-
-  // Step 4: Batch insert vault_items
-  if (newVaultItems.length > 0) {
-    const { error } = await supabase.from('vault_items').insert(newVaultItems);
-    if (error) return { count: 0, error: error.message };
-  }
-
-  return { count: newVaultItems.length };
 }
