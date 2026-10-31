@@ -49,8 +49,8 @@ Pending schema: `tagline`, `location`, `website`, `github`, `twitter`, `linkedin
 - Fonts: Playfair Display (`font-syne`) for headings, Inter (`font-dmsans`) for body
 
 ### Routes
-- `/profile` → `MyProfilePage` (own profile, old design tokens, Supabase-backed)
-- `/u/:username` → `ProfilePage` (public profile, new design tokens, Supabase-backed)
+- `/profile` → Redirects to canonical `/u/:username` (own editorial profile)
+- `/u/:username` → `ProfilePage` (editorial profile, new design tokens, Supabase-backed)
 
 ### Database source of truth (IMPORTANT)
 The live Supabase database (project `qglvwvpsegrucrhcpzxd`) is the single source
