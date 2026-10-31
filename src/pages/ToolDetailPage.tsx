@@ -12,6 +12,7 @@ import ReviewCard from '@/components/ReviewCard';
 import ReviewForm from '@/components/ReviewForm';
 import ToolScreenshot from '@/components/ToolScreenshot';
 import Markdown from '@/components/Markdown';
+import TagBadge from '@/components/TagBadge';
 
 interface ToolDetailPageProps {
   tools: Tool[];
@@ -365,12 +366,12 @@ export default function ToolDetailPage({
             </p>
             <div className="flex flex-wrap gap-1.5">
               {(tool.tags || []).map(tag => (
-                <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 bg-s2 border border-tv-border rounded text-[11px] font-mono text-tv-text-s">
-                  {tag}
-                  <button onClick={() => onRemoveTag(tool.id, tag)} className="hover:text-tv-text transition-colors ml-0.5">
-                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" strokeWidth="1.5"/></svg>
-                  </button>
-                </span>
+                <TagBadge
+                  key={tag}
+                  name={tag}
+                  slug={tag.toLowerCase().replace(/\s+/g, '-')}
+                  onRemove={() => onRemoveTag(tool.id, tag)}
+                />
               ))}
               <input
                 onKeyDown={e => { if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) { onAddTag(tool.id, (e.target as HTMLInputElement).value.trim().toLowerCase()); (e.target as HTMLInputElement).value = ''; } }}

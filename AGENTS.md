@@ -23,7 +23,7 @@ Build passes clean. All profile features implemented.
 - Contact URL field (Calendly, email link, etc.)
 - Avatar + Banner upload with preview
 - Signature quote
-- Curator badge selection (6 options + none)
+- Curator badge selection (4 options + none)
 - Featured collection selector (dropdown of user's collections)
 - Currently Loving shelf manager (add/remove tools, max 3)
 - Visibility toggles: show collections, show reviews, show followers, public profile

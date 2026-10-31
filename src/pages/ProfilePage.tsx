@@ -12,6 +12,7 @@ import { useProfile, useFollow } from '@/hooks/useProfile';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { formatDistanceToNow } from 'date-fns';
 import CuratorBadge from '@/components/CuratorBadge';
+import ReputationBadge from '@/components/ReputationBadge';
 import ProfileSettingsModal from '@/components/ProfileSettingsModal';
 import CuratorRecommendations from '@/components/CuratorRecommendations';
 import { notifyNewFollower } from '@/lib/notifications';
@@ -564,11 +565,14 @@ export default function ProfilePage() {
                   @{profile.username}
                 </p>
               </div>
-              {profile.curatorBadge && profile.curatorBadge !== 'none' && (
-                <div className="mb-3 mt-1.5">
+              <div className="flex items-center gap-2 flex-wrap mb-3 mt-1.5">
+                {profile.curatorBadge && profile.curatorBadge !== 'none' && (
                   <CuratorBadge badge={profile.curatorBadge} size="sm" />
-                </div>
-              )}
+                )}
+                {profile.reputationScore > 0 && (
+                  <ReputationBadge score={profile.reputationScore} size="sm" />
+                )}
+              </div>
 
               {location && (
                 <p className="text-[13px] font-dmsans flex items-center gap-1.5 mb-2" style={{ color: '#5a5a5a' }}>

@@ -35,7 +35,7 @@ export default function BannerUpload({ currentUrl, onUpload, onRemove }: BannerU
   return (
     <>
       <div
-        className="relative w-full h-48 rounded-xl overflow-hidden group"
+        className="relative w-full h-32 rounded-xl overflow-hidden group"
         style={{ backgroundColor: '#E5E0D6' }}
       >
         {currentUrl ? (

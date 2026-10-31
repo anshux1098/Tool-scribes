@@ -6,7 +6,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import FocusTrap from '@/components/FocusTrap';
 import AvatarUpload from '@/components/AvatarUpload';
-import { useStorageUpload } from '@/hooks/useStorageUpload';
+import BannerUpload from '@/components/BannerUpload';
 import { CURATOR_BADGES, CuratorBadge } from '@/lib/types';
 
 interface ProfileSettingsModalProps {
@@ -45,7 +45,6 @@ export default function ProfileSettingsModal({ open, onClose, onSaved }: Profile
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const { upload: uploadBanner } = useStorageUpload('banners');
 
   const [collections, setCollections] = useState<{ id: string; name: string; toolCount: number }[]>([]);
 
@@ -206,45 +205,11 @@ export default function ProfileSettingsModal({ open, onClose, onSaved }: Profile
                 {/* ── Banner ── */}
                 <div>
                   <label className="text-[10px] font-mono text-tv-text-m uppercase tracking-widest mb-2 block">Profile Banner</label>
-                  <div
-                    className="relative w-full h-32 rounded-xl overflow-hidden group"
-                    style={{ backgroundColor: '#E5E0D6' }}
-                  >
-                    {bannerUrl ? (
-                      <img src={bannerUrl} alt="Banner" className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-[11px] font-mono text-tv-text-m">No banner image</div>
-                    )}
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
-                      <button
-                        onClick={() => {
-                          const input = document.createElement('input');
-                          input.type = 'file';
-                          input.accept = 'image/*';
-                          input.onchange = async (e) => {
-                            const file = (e.target as HTMLInputElement).files?.[0];
-                            if (!file) return;
-                            const url = await uploadBanner(file);
-                            if (url) setBannerUrl(url);
-                          };
-                          input.click();
-                        }}
-                        className="w-9 h-9 rounded-full bg-white/90 flex items-center justify-center hover:bg-white transition-colors shadow-sm"
-                        title="Upload banner"
-                      >
-                        <Globe size={14} style={{ color: '#1a1a1a' }} />
-                      </button>
-                      {bannerUrl && (
-                        <button
-                          onClick={() => setBannerUrl('')}
-                          className="w-9 h-9 rounded-full bg-white/90 flex items-center justify-center hover:bg-white transition-colors shadow-sm"
-                          title="Remove banner"
-                        >
-                          <X size={14} style={{ color: '#DC2626' }} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                  <BannerUpload
+                    currentUrl={bannerUrl}
+                    onUpload={(url) => setBannerUrl(url)}
+                    onRemove={() => setBannerUrl('')}
+                  />
                 </div>
 
                 {/* ── Display Name ── */}

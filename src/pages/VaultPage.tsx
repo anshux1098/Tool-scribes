@@ -1,17 +1,17 @@
 import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Search, Trash2 } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
 import VaultGridCard from '@/components/VaultGridCard';
 import CollectionCard from '@/components/CollectionCard';
 import CategoryFilter from '@/components/CategoryFilter';
 import SkeletonToolCard from '@/components/SkeletonToolCard';
 import VaultRecommendations from '@/components/VaultRecommendations';
+import VaultDustSection from '@/components/VaultDustSection';
 import { Tool, ToolCategory, Collection } from '@/lib/types';
 import { formatDistanceToNow } from 'date-fns';
 import { useAuth } from '@/hooks/useAuth';
 import { useDustCollector } from '@/hooks/useDustCollector';
 import { fetchAllToolHealth } from '@/lib/health';
-import { toast } from 'sonner';
 
 interface VaultPageProps {
   tools: Tool[];
@@ -195,22 +195,13 @@ export default function VaultPage({ tools, onToggleFavorite, onRemoveFromVault, 
       </div>
 
       {/* ─── Dust Collector ───────────────────────── */}
-      {user && dustTools.length > 0 && (
-        <div className="mb-6 p-4 rounded-xl border-2 border-amber-500/30 bg-amber-500/5">
-          <p className="text-[10px] font-mono text-amber-700 uppercase tracking-widest mb-2">Stale Tools — {dustTools.length}</p>
-          <p className="text-[12px] text-tv-text-s font-mono mb-3">These tools haven't been visited in a while.</p>
-          <div className="flex flex-wrap gap-2">
-            {dustTools.slice(0, 6).map(dt => (
-              <span key={dt.id} className="inline-flex items-center gap-1 px-2 py-1 rounded bg-amber-500/10 text-[11px] font-mono text-amber-700">
-                {dt.name}
-                <button aria-label={`Dismiss ${dt.name}`} onClick={async () => { try { await dismissTool(dt.id); toast.success('Tool dismissed'); } catch { toast.error('Failed to dismiss tool'); } }} className="hover:opacity-60">×</button>
-                <button aria-label={`Remove ${dt.name} from your vault`} onClick={async () => { try { await removeFromVault(dt.id); toast.success(`${dt.name} removed from vault`); } catch { toast.error('Failed to remove tool'); } }} className="hover:opacity-60 hover:text-red-500">
-                  <Trash2 size={11} />
-                </button>
-              </span>
-            ))}
-          </div>
-        </div>
+      {user && (
+        <VaultDustSection
+          dustTools={dustTools}
+          loading={loading}
+          onDismiss={dismissTool}
+          onRemove={removeFromVault}
+        />
       )}
 
       {/* ─── Tool Grid ────────────────────────────── */}

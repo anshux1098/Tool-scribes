@@ -12,6 +12,7 @@ import { useCurrentProfile } from '@/hooks/useProfile';
 import { formatDistanceToNow } from 'date-fns';
 import ProfileSettingsModal from '@/components/ProfileSettingsModal';
 import CuratorBadge from '@/components/CuratorBadge';
+import ReputationBadge from '@/components/ReputationBadge';
 import { hashId } from '@/lib/hashId';
 import { SEO } from '@/components/SEO';
 import { toast } from 'sonner';
@@ -305,6 +306,9 @@ export default function MyProfilePage() {
                 {username && <p className="text-[14px] font-mono text-tv-text-m">@{username}</p>}
                 {profile?.curatorBadge && profile.curatorBadge !== 'none' && (
                   <CuratorBadge badge={profile.curatorBadge} size="sm" />
+                )}
+                {profile && profile.reputationScore > 0 && (
+                  <ReputationBadge score={profile.reputationScore} size="sm" />
                 )}
               </div>
               {location && (

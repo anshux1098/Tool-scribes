@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Hash, ArrowLeft, Search } from 'lucide-react';
 import { useTags } from '@/lib/tags';
 import TagSuggestModal from '@/components/TagSuggestModal';
+import TrendingTags from '@/components/TrendingTags';
 import { useAuth } from '@/hooks/useAuth';
 import { SEO } from '@/components/SEO';
 
@@ -53,6 +54,7 @@ export default function TagsPage() {
       </div>
 
       <div className="max-w-3xl mx-auto px-6 pb-16">
+        {!search && <div className="mb-6"><TrendingTags tags={tags} loading={loading} /></div>}
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="w-5 h-5 border-2 border-tv-border border-t-tv-primary rounded-full animate-spin" />
