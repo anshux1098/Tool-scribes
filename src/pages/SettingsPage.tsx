@@ -30,6 +30,9 @@ export default function SettingsPage() {
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
   const [publicProfile, setPublicProfile] = useState(false);
+  const [showCollections, setShowCollections] = useState(true);
+  const [showReviews, setShowReviews] = useState(true);
+  const [showFollowers, setShowFollowers] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileError, setProfileError] = useState('');
 
@@ -44,6 +47,9 @@ export default function SettingsPage() {
       setUsername(profile.username ?? '');
       setBio(profile.bio);
       setPublicProfile(profile.publicProfile);
+      setShowCollections(profile.showCollections);
+      setShowReviews(profile.showReviews);
+      setShowFollowers(profile.showFollowers);
     }
   }, [profile]);
 
@@ -179,10 +185,16 @@ export default function SettingsPage() {
         <div className="flex items-center justify-between py-2">
           <div>
             <p className="text-[14px] text-tv-text font-medium">Public Profile</p>
-            <p className="text-[11px] text-tv-text-s font-mono mt-0.5">Allow others to view your profile page</p>
+            <p className="text-[11px] text-tv-text-s font-mono mt-0.5">Allow others to view your profile page at /u/{username || 'username'}</p>
           </div>
           <button
-            onClick={() => { setPublicProfile(!publicProfile); updateProfile({ public_profile: !publicProfile }); }}
+            onClick={async () => {
+              const next = !publicProfile;
+              setPublicProfile(next);
+              const ok = await updateProfile({ public_profile: next });
+              if (!ok) setPublicProfile(!next);
+              else toast.success(next ? 'Profile is now public' : 'Profile is now private');
+            }}
             role="switch" aria-checked={publicProfile}
             className={`relative w-10 h-5 rounded-full transition-colors duration-150 flex-shrink-0 ${publicProfile ? 'bg-tv-primary' : 'bg-s3'}`}
           >
@@ -191,16 +203,62 @@ export default function SettingsPage() {
         </div>
         <div className="flex items-center justify-between py-2">
           <div>
-            <p className="text-[14px] text-tv-text font-medium">Show in Discover</p>
-            <p className="text-[11px] text-tv-text-s font-mono mt-0.5">Feature your collections in discovery feeds</p>
+            <p className="text-[14px] text-tv-text font-medium">Show Collections on Profile</p>
+            <p className="text-[11px] text-tv-text-s font-mono mt-0.5">Display your public collections on your profile page</p>
           </div>
           <button
-            onClick={() => toast.info('Coming soon')}
-            className="text-[11px] font-mono text-tv-text-s border border-tv-border rounded-lg px-3 py-1.5 hover:bg-s2 transition-colors">
-            Manage
+            onClick={async () => {
+              const next = !showCollections;
+              setShowCollections(next);
+              const ok = await updateProfile({ show_collections: next });
+              if (!ok) setShowCollections(!next);
+              else toast.success(next ? 'Collections visible on profile' : 'Collections hidden from profile');
+            }}
+            role="switch" aria-checked={showCollections}
+            className={`relative w-10 h-5 rounded-full transition-colors duration-150 flex-shrink-0 ${showCollections ? 'bg-tv-primary' : 'bg-s3'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-150 ${showCollections ? 'translate-x-5' : ''}`} />
           </button>
         </div>
-        <p className="text-[11px] text-tv-text-s font-mono pt-2 border-t border-tv-border">Reviews you write are always public on tool pages.</p>
+        <div className="flex items-center justify-between py-2">
+          <div>
+            <p className="text-[14px] text-tv-text font-medium">Show Reviews on Profile</p>
+            <p className="text-[11px] text-tv-text-s font-mono mt-0.5">Display recent reviews on your profile page</p>
+          </div>
+          <button
+            onClick={async () => {
+              const next = !showReviews;
+              setShowReviews(next);
+              const ok = await updateProfile({ show_reviews: next });
+              if (!ok) setShowReviews(!next);
+              else toast.success(next ? 'Reviews visible on profile' : 'Reviews hidden from profile');
+            }}
+            role="switch" aria-checked={showReviews}
+            className={`relative w-10 h-5 rounded-full transition-colors duration-150 flex-shrink-0 ${showReviews ? 'bg-tv-primary' : 'bg-s3'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-150 ${showReviews ? 'translate-x-5' : ''}`} />
+          </button>
+        </div>
+        <div className="flex items-center justify-between py-2">
+          <div>
+            <p className="text-[14px] text-tv-text font-medium">Show Followers on Profile</p>
+            <p className="text-[11px] text-tv-text-s font-mono mt-0.5">Display your follower and following counts on your profile</p>
+          </div>
+          <button
+            onClick={async () => {
+              const next = !showFollowers;
+              setShowFollowers(next);
+              const ok = await updateProfile({ show_followers: next });
+              if (!ok) setShowFollowers(!next);
+              else toast.success(next ? 'Followers visible on profile' : 'Followers hidden from profile');
+            }}
+            role="switch" aria-checked={showFollowers}
+            className={`relative w-10 h-5 rounded-full transition-colors duration-150 flex-shrink-0 ${showFollowers ? 'bg-tv-primary' : 'bg-s3'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-150 ${showFollowers ? 'translate-x-5' : ''}`} />
+          </button>
+        </div>
+        <p className="text-[11px] text-tv-text-s font-mono pt-2 border-t border-tv-border">Reviews and public collections are also discoverable across the platform.</p>
       </div>
     ),
     appearance: (
