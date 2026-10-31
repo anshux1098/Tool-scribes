@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ExternalLink, Star, Copy, Check, FolderPlus, Bookmark, Wrench, Clock, Sparkles, Globe, Shield, Monitor, MessageSquare, Plus, Send, Loader2, Trash2, Code } from 'lucide-react';
 import { Tool, Collection, Review, CATEGORY_COLORS, CATEGORY_BG, CATEGORY_LABELS } from '@/lib/types';
 import type { HealthStatus } from '@/lib/health';
-import { generateSummary } from '@/lib/generateSummary';
 import { askToolScribe } from '@/lib/ask-toolscribe';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
@@ -184,7 +183,6 @@ export default function ToolDetailPage({
   const catColor = CATEGORY_COLORS[tool.category];
   const catBg = CATEGORY_BG[tool.category];
   const domain = (() => { try { return new URL(tool.url).hostname.replace('www.', ''); } catch { return tool.url; } })();
-  const summary = generateSummary(tool);
 
   const features: { label: string; present: boolean }[] = [
     { label: 'Free to use', present: tool.isFree },
@@ -342,7 +340,7 @@ export default function ToolDetailPage({
                 {tool.aiProfileVersion && <p>v{tool.aiProfileVersion}</p>}
               </div>
             )}
-            <p className="text-[15px] text-tv-text leading-relaxed">{tool.aiSummary || summary}</p>
+            <p className="text-[15px] text-tv-text leading-relaxed">{tool.aiSummary || tool.description}</p>
           </div>
 
           {/* 3. Screenshot */}
