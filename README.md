@@ -4,11 +4,6 @@
 
 <br />
 
-# ToolScribe
-
-**Stop drowning in SEO-spam "Top 50 Tools" blog posts.**  
-Discover, evaluate, and organize software curated by builders whose taste you actually trust — backed by structured reviews, live uptime checks, and an AI assistant grounded in real community data.
-
 [![CI Pipeline](https://github.com/anshux1098/Tool-scribes/actions/workflows/ci.yml/badge.svg)](https://github.com/anshux1098/Tool-scribes/actions)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white&style=flat-square)
 ![React 18](https://img.shields.io/badge/React_18-20232A?logo=react&logoColor=61DAFB&style=flat-square)
@@ -18,15 +13,17 @@ Discover, evaluate, and organize software curated by builders whose taste you ac
 ![Vitest](https://img.shields.io/badge/Tested_with-Vitest-6E9F18?logo=vitest&logoColor=white&style=flat-square)
 [![License: MIT](https://img.shields.io/badge/License-MIT-2D6A4F.svg?style=flat-square)](./LICENSE)
 
-[**Why ToolScribe?**](#-why-toolscribe) · [**Product Tour**](#-product-tour) · [**Key Features**](#-key-features) · [**Architecture & Security**](#️-architecture--security-model) · [**Quick Start**](#-quick-start) · [**Contributing**](#-contributing)
+[**Why ToolScribe?**](#why-toolscribe) · [**Product Tour**](#product-tour) · [**Key Features**](#key-features) · [**Architecture & Security**](#architecture) · [**Quick Start**](#quick-start) · [**Contributing**](#contributing)
 
----
+<br />
 
 <img src="./docs/screenshots/discover-hero.png" alt="ToolScribe Editorial Discover Feed" width="100%" />
 
 </div>
 
 ---
+
+<a id="why-toolscribe"></a>
 
 ## 💡 Why ToolScribe?
 
@@ -49,6 +46,8 @@ Finding great software today is broken in three ways:
 
 ---
 
+<a id="product-tour"></a>
+
 ## 📸 Product Tour
 
 ### 1. Editorial Discovery & Instant Command Palette (`Ctrl+K`)
@@ -59,8 +58,6 @@ Browse time-decayed **Trending**, **Rising**, and **Newest** shelves, filter imm
 | :---: | :---: |
 | <img src="./docs/screenshots/discover-shelves.png" alt="Trending shelves and collections" width="100%" /> | <img src="./docs/screenshots/command-palette.png" alt="Command Palette instant search" width="100%" /> |
 
----
-
 ### 2. Deep Tool Profiles, Structured Reviews & Live Health Monitoring
 
 Every tool page goes beyond a simple link: view automated screenshots, neutral AI-generated summaries, **live uptime health badges**, community-voted **alternatives**, personal vault notes, and **structured reviews** that highlight *Best For*, *Gotchas*, and *Free Tier* limits.
@@ -69,17 +66,13 @@ Every tool page goes beyond a simple link: view automated screenshots, neutral A
   <img src="./docs/screenshots/tool-detail.png" alt="ToolScribe Tool Detail Page" width="100%" />
 </div>
 
----
-
 ### 3. Curated Collections Hub & 1-Click Stack Cloning
 
-Curators bundle tools into thematic workflows (*"Local-First AI Stack"*, *"Indie Hacker Design Kit"*, *"Rust CLI Essentials"*). Anyone can **follow** a collection for updates or **clone** an entire public collection into their own workspace in a single atomic transaction.
+Curators bundle tools into thematic workflows (*"AI & ML"*, *"Productivity"*, *"Daily Dev Stack"*). Anyone can **follow** a collection for updates or **clone** an entire public collection into their own workspace in a single atomic transaction.
 
 | Collections Hub (`/collections`) | Public Collection View (`/c/:uuid`) |
 | :---: | :---: |
 | <img src="./docs/screenshots/collections-hub.png" alt="Collections Hub" width="100%" /> | <img src="./docs/screenshots/collection-detail.png" alt="Public Collection Detail" width="100%" /> |
-
----
 
 ### 4. Editorial Curator Profiles (`/u/:username`)
 
@@ -90,6 +83,8 @@ Your profile is your software portfolio. Showcase your **Curator Badge**, reputa
 </div>
 
 ---
+
+<a id="key-features"></a>
 
 ## ✨ Key Features
 
@@ -112,6 +107,8 @@ Your profile is your software portfolio. Showcase your **Curator Badge**, reputa
 
 ---
 
+<a id="architecture"></a>
+
 ## 🏗️ Architecture & Security Model
 
 ToolScribe is built as a fast, type-safe React SPA backed directly by **Supabase Postgres**, **Row-Level Security (RLS)**, **`SECURITY DEFINER` Postgres RPCs**, and **Deno Edge Functions**.
@@ -119,24 +116,24 @@ ToolScribe is built as a fast, type-safe React SPA backed directly by **Supabase
 ```mermaid
 flowchart LR
     subgraph Client["Frontend (React 18 + Vite 8 + TypeScript)"]
-        UI["Editorial UI\n(Tailwind + shadcn/ui)"]
-        State["TanStack Query +\nClient Search Engine"]
+        UI["Editorial UI (Tailwind + shadcn/ui)"]
+        State["TanStack Query + Client Search"]
     end
 
     subgraph Supabase["Supabase Backend (Postgres + Auth + Storage)"]
-        RLS["81 RLS Policies +\nColumn-Scoped Grants"]
-        RPC["24 Postgres RPCs & Triggers\n(toggle_upvote, clone_public_collection,\nmoderate_review, calculate_reputation)"]
-        Storage["Storage Buckets\n(avatars, banners, covers, screenshots\n5 MiB cap + strict MIME guards)"]
+        RLS["81 RLS Policies + Column-Scoped Grants"]
+        RPC["24 Postgres RPCs & Triggers"]
+        Storage["Storage Buckets (5 MiB + MIME Guards)"]
     end
 
     subgraph Edge["Deno Edge Functions"]
-        AskAI["ask-toolscribe\n(Catalog RAG + Tool Q&A)"]
-        GenProfile["generate-ai-profile\n(Live Site Scraper + Summarizer)"]
-        RateLimit["Atomic DB Rate Limiter\n(rate_limit_counters)"]
+        AskAI["ask-toolscribe (Catalog RAG + Q&A)"]
+        GenProfile["generate-ai-profile (Live Site Summarizer)"]
+        RateLimit["Atomic DB Rate Limiter"]
     end
 
     subgraph LLM["AI Providers"]
-        OR["OpenRouter Free Models\n+ Automatic Gemini Fallback"]
+        OR["OpenRouter + Gemini Fallback"]
     end
 
     UI <--> State
@@ -172,6 +169,8 @@ flowchart LR
 | **Testing & Quality** | Vitest, React Testing Library, Playwright, ESLint, TypeScript project references (`tsc -b`) |
 
 ---
+
+<a id="quick-start"></a>
 
 ## 🚀 Quick Start
 
@@ -268,6 +267,8 @@ Tool-scribes/
 ```
 
 ---
+
+<a id="contributing"></a>
 
 ## 🤝 Contributing
 

@@ -1,9 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 380" width="100%" height="100%">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 370" width="100%" height="100%">
   <defs>
     <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#F5F2EB" />
-      <stop offset="50%" stop-color="#F0EDE6" />
-      <stop offset="100%" stop-color="#E6E1D6" />
+      <stop offset="0%" stop-color="#F6F3EC" />
+      <stop offset="55%" stop-color="#F0EDE6" />
+      <stop offset="100%" stop-color="#E5DFD3" />
     </linearGradient>
     <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="#1B4332" />
@@ -11,79 +11,78 @@
       <stop offset="100%" stop-color="#40916C" />
     </linearGradient>
     <pattern id="editorialGrid" width="40" height="40" patternUnits="userSpaceOnUse">
-      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1A1A1A" stroke-width="0.6" stroke-opacity="0.045" />
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1A1A1A" stroke-width="0.6" stroke-opacity="0.04" />
     </pattern>
-    <filter id="cardShadow" x="-5%" y="-5%" width="112%" height="118%">
-      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#1A1A1A" flood-opacity="0.07" />
+    <filter id="cardShadow" x="-6%" y="-6%" width="114%" height="120%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#1A1A1A" flood-opacity="0.075" />
     </filter>
   </defs>
 
-  <!-- Main Background -->
-  <rect width="1200" height="380" rx="20" fill="url(#bgGrad)" stroke="#DCD6C8" stroke-width="2" />
-  <rect width="1200" height="380" rx="20" fill="url(#editorialGrid)" />
+  <!-- Main Canvas -->
+  <rect width="1200" height="370" rx="20" fill="url(#bgGrad)" stroke="#DCD6C8" stroke-width="2" />
+  <rect width="1200" height="370" rx="20" fill="url(#editorialGrid)" />
 
-  <!-- Decorative Accent Glow -->
-  <circle cx="1020" cy="80" r="220" fill="#2D6A4F" opacity="0.06" />
-  <circle cx="180" cy="320" r="180" fill="#2D6A4F" opacity="0.05" />
+  <!-- Subtle Radial Accents -->
+  <circle cx="1030" cy="80" r="210" fill="#2D6A4F" opacity="0.055" />
+  <circle cx="160" cy="310" r="170" fill="#2D6A4F" opacity="0.045" />
 
   <!-- Top Editorial Eyebrow -->
-  <g transform="translate(72, 54)">
-    <rect x="0" y="0" width="250" height="28" rx="14" fill="#2D6A4F" fill-opacity="0.1" stroke="#2D6A4F" stroke-opacity="0.25" stroke-width="1" />
+  <g transform="translate(68, 48)">
+    <rect x="0" y="0" width="248" height="28" rx="14" fill="#2D6A4F" fill-opacity="0.1" stroke="#2D6A4F" stroke-opacity="0.25" stroke-width="1" />
     <circle cx="16" cy="14" r="4" fill="#2D6A4F" />
-    <text x="28" y="18" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="700" letter-spacing="1.4" fill="#2D6A4F">OPEN-SOURCE CURATION ENGINE</text>
+    <text x="28" y="18" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10.5" font-weight="700" letter-spacing="1.4" fill="#2D6A4F">OPEN-SOURCE CURATION ENGINE</text>
   </g>
 
-  <!-- Main Brand Title -->
-  <g transform="translate(72, 142)">
-    <text x="0" y="0" font-family="Georgia, 'Playfair Display', 'Times New Roman', serif" font-size="68" font-weight="700" letter-spacing="-1.5" fill="#1A1A1A">
+  <!-- Brand Wordmark & Value Proposition (Bounded safely to x <= 820) -->
+  <g transform="translate(68, 136)">
+    <text x="0" y="0" font-family="Georgia, 'Playfair Display', 'Times New Roman', serif" font-size="66" font-weight="700" letter-spacing="-1.5" fill="#1A1A1A">
       Tool<tspan fill="url(#emeraldGrad)" font-style="italic">Scribe</tspan><tspan fill="#2D6A4F">.</tspan>
     </text>
-    <text x="2" y="44" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="21" font-weight="500" fill="#3D3D3D">
-      Stop drowning in SEO-spam tool lists. Discover software curated by humans you trust.
+    <text x="2" y="42" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="19" font-weight="600" fill="#262626">
+      The taste-driven software discovery &amp; curation platform.
     </text>
-    <text x="2" y="74" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="15" font-weight="400" fill="#6B6B6B">
-      Build living collections · Write structured Best-For &amp; Gotcha reviews · Query the catalog with Ask ToolScribe AI
+    <text x="2" y="70" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14.5" font-weight="400" fill="#5C5C5C">
+      Build living tool collections, write structured Best-For &amp; Gotcha reviews,
+    </text>
+    <text x="2" y="92" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14.5" font-weight="400" fill="#5C5C5C">
+      follow curators you trust, and query the catalog with Ask ToolScribe AI.
     </text>
   </g>
 
-  <!-- Bottom Feature Pills -->
-  <g transform="translate(72, 292)" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="600">
-    <!-- Pill 1 -->
+  <!-- Feature Pills -->
+  <g transform="translate(68, 284)" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12.5" font-weight="600">
     <g filter="url(#cardShadow)">
-      <rect x="0" y="0" width="186" height="40" rx="10" fill="#FFFFFF" stroke="#E2DDD2" stroke-width="1" />
-      <circle cx="20" cy="20" r="5" fill="#2D6A4F" />
-      <text x="34" y="25" fill="#1A1A1A">Curated Collections</text>
+      <rect x="0" y="0" width="176" height="38" rx="10" fill="#FFFFFF" stroke="#E2DDD2" stroke-width="1" />
+      <circle cx="18" cy="19" r="4.5" fill="#2D6A4F" />
+      <text x="31" y="24" fill="#1A1A1A">Living Collections</text>
     </g>
-    <!-- Pill 2 -->
-    <g transform="translate(200, 0)" filter="url(#cardShadow)">
-      <rect x="0" y="0" width="194" height="40" rx="10" fill="#FFFFFF" stroke="#E2DDD2" stroke-width="1" />
-      <circle cx="20" cy="20" r="5" fill="#D97706" />
-      <text x="34" y="25" fill="#1A1A1A">Structured Reviews</text>
+    <g transform="translate(188, 0)" filter="url(#cardShadow)">
+      <rect x="0" y="0" width="184" height="38" rx="10" fill="#FFFFFF" stroke="#E2DDD2" stroke-width="1" />
+      <circle cx="18" cy="19" r="4.5" fill="#D97706" />
+      <text x="31" y="24" fill="#1A1A1A">Structured Reviews</text>
     </g>
-    <!-- Pill 3 -->
-    <g transform="translate(408, 0)" filter="url(#cardShadow)">
-      <rect x="0" y="0" width="198" height="40" rx="10" fill="#FFFFFF" stroke="#E2DDD2" stroke-width="1" />
-      <circle cx="20" cy="20" r="5" fill="#2563EB" />
-      <text x="34" y="25" fill="#1A1A1A">Ask ToolScribe (AI)</text>
+    <g transform="translate(384, 0)" filter="url(#cardShadow)">
+      <rect x="0" y="0" width="186" height="38" rx="10" fill="#FFFFFF" stroke="#E2DDD2" stroke-width="1" />
+      <circle cx="18" cy="19" r="4.5" fill="#2563EB" />
+      <text x="31" y="24" fill="#1A1A1A">Ask ToolScribe (AI)</text>
     </g>
-    <!-- Pill 4 -->
-    <g transform="translate(620, 0)" filter="url(#cardShadow)">
-      <rect x="0" y="0" width="198" height="40" rx="10" fill="#FFFFFF" stroke="#E2DDD2" stroke-width="1" />
-      <circle cx="20" cy="20" r="5" fill="#10B981" />
-      <text x="34" y="25" fill="#1A1A1A">Live Health Checks</text>
+    <g transform="translate(582, 0)" filter="url(#cardShadow)">
+      <rect x="0" y="0" width="188" height="38" rx="10" fill="#FFFFFF" stroke="#E2DDD2" stroke-width="1" />
+      <circle cx="18" cy="19" r="4.5" fill="#10B981" />
+      <text x="31" y="24" fill="#1A1A1A">Live Health Checks</text>
     </g>
   </g>
 
   <!-- Right-side Floating Editorial Preview Card -->
-  <g transform="translate(865, 52)" filter="url(#cardShadow)">
-    <rect x="0" y="0" width="275" height="280" rx="16" fill="#FFFFFF" stroke="#E2DDD2" stroke-width="1.5" />
+  <g transform="translate(868, 45)" filter="url(#cardShadow)">
+    <rect x="0" y="0" width="272" height="280" rx="16" fill="#FFFFFF" stroke="#E2DDD2" stroke-width="1.5" />
     <!-- Card Header -->
     <rect x="20" y="20" width="44" height="44" rx="10" fill="#1A1A1A" />
     <text x="33" y="49" font-family="Georgia, serif" font-size="22" font-weight="700" fill="#FFFFFF">R</text>
     <text x="76" y="38" font-family="Georgia, serif" font-size="17" font-weight="700" fill="#1A1A1A">Raycast</text>
     <text x="76" y="56" font-family="Inter, sans-serif" font-size="12" fill="#6B6B6B">raycast.com · Productivity</text>
 
-    <!-- Health Badge -->
+    <!-- Health & Rating Badges -->
     <rect x="20" y="78" width="94" height="22" rx="6" fill="#ECFDF5" stroke="#A7F3D0" stroke-width="1" />
     <circle cx="32" cy="89" r="3.5" fill="#10B981" />
     <text x="41" y="93" font-family="Inter, sans-serif" font-size="10.5" font-weight="600" fill="#065F46">99.9% Online</text>
@@ -92,7 +91,7 @@
     <text x="133" y="93" font-family="Inter, sans-serif" font-size="10.5" font-weight="600" fill="#2D6A4F">★ 4.9 / 5.0</text>
 
     <!-- Structured Review Mini-Block -->
-    <line x1="20" y1="114" x2="255" y2="114" stroke="#EFECE6" stroke-width="1" />
+    <line x1="20" y1="114" x2="252" y2="114" stroke="#EFECE6" stroke-width="1" />
 
     <text x="20" y="135" font-family="Inter, sans-serif" font-size="10" font-weight="700" letter-spacing="0.8" fill="#2D6A4F">✓ BEST FOR</text>
     <text x="20" y="152" font-family="Inter, sans-serif" font-size="12" fill="#2B2B2B">Replacing Spotlight with scriptable</text>
@@ -103,7 +102,7 @@
     <text x="20" y="227" font-family="Inter, sans-serif" font-size="12" fill="#2B2B2B">sync &amp; AI require Pro tier.</text>
 
     <!-- Bottom Curator Bar -->
-    <rect x="20" y="242" width="235" height="24" rx="6" fill="#F8F6F1" />
+    <rect x="20" y="242" width="232" height="24" rx="6" fill="#F8F6F1" />
     <text x="30" y="258" font-family="Inter, sans-serif" font-size="11" font-weight="500" fill="#525252">Curated in <tspan font-weight="700" fill="#1A1A1A">Daily Dev Stack</tspan></text>
   </g>
 </svg>
