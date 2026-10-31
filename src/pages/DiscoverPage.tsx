@@ -145,9 +145,12 @@ export default function DiscoverPage({ tools, onUpvote, onSave, onAddTool, loadi
     return [...tools].sort((a, b) => (trendingScores.get(b.id) || 0) - (trendingScores.get(a.id) || 0));
   }, [tools, trendingScores]);
 
+
   const trending = useMemo(() => {
-    return sortedByTrending.filter(t => (trendingScores.get(t.id) || 0) > 0).slice(0, 8);
-  }, [sortedByTrending, trendingScores]);
+    return sortedByTrending
+      .filter(t => (trendingScores.get(t.id) || 0) > 0 && (!featured || t.id !== featured.id))
+      .slice(0, 8);
+  }, [sortedByTrending, trendingScores, featured]);
 
   const trendingIds = useMemo(() => new Set(trending.map(t => t.id)), [trending]);
 
@@ -191,6 +194,7 @@ export default function DiscoverPage({ tools, onUpvote, onSave, onAddTool, loadi
   }, [tools]);
 
   const popularTags = tags.filter(t => t.toolCount > 0).slice(0, 6);
+  const isFiltering = Boolean(search.trim() || activeCategory);
 
   const sectionDelay = 0.08;
 
@@ -235,9 +239,39 @@ export default function DiscoverPage({ tools, onUpvote, onSave, onAddTool, loadi
             />
           </div>
 
+          {/* Category filter pills */}
+          <div className="flex items-center gap-2 mt-5 flex-wrap">
+            <button
+              onClick={() => setActiveCategory(null)}
+              className={`px-3 py-1 rounded-lg text-[12px] font-mono transition-colors border ${
+                activeCategory === null
+                  ? 'bg-tv-text text-bg border-tv-text font-medium'
+                  : 'bg-surface text-tv-text-s border-tv-border hover:border-tv-border-l hover:text-tv-text'
+              }`}
+            >
+              All
+            </button>
+            {ALL_CATEGORIES.map(cat => {
+              const isActive = activeCategory === cat.key;
+              return (
+                <button
+                  key={cat.key}
+                  onClick={() => setActiveCategory(isActive ? null : cat.key)}
+                  className={`px-3 py-1 rounded-lg text-[12px] font-mono transition-colors border ${
+                    isActive
+                      ? 'bg-tv-primary text-white border-tv-primary font-medium'
+                      : 'bg-surface text-tv-text-s border-tv-border hover:border-tv-border-l hover:text-tv-text'
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              );
+            })}
+          </div>
+
           {/* Popular tags */}
           {popularTags.length > 0 && (
-            <div className="flex items-center gap-2 mt-4 flex-wrap">
+            <div className="flex items-center gap-2 mt-3 flex-wrap">
               <span className="text-[11px] font-mono text-tv-text-m">Popular:</span>
               {popularTags.map(tag => (
                 <button
@@ -254,6 +288,8 @@ export default function DiscoverPage({ tools, onUpvote, onSave, onAddTool, loadi
         </div>
       </Section>
 
+      {!isFiltering && (
+        <>
       {/* ──────────────── 2. Recommended For You ──────────────── */}
       {user && vaultRecs.length > 0 && (
         <Section delay={sectionDelay}>
@@ -529,9 +565,22 @@ export default function DiscoverPage({ tools, onUpvote, onSave, onAddTool, loadi
         </Section>
       )}
 
+        </>
+      )}
+
       {/* ──────────────── 10. All Tools ──────────────── */}
-      <Section delay={sectionDelay * 9}>
-        <SectionLabel icon={ArrowRight}>All Tools</SectionLabel>
+      <Section delay={isFiltering ? 0.05 : sectionDelay * 9}>
+        <SectionLabel icon={ArrowRight}>
+          {isFiltering ? (
+            <span>
+              Results ({filtered.length})
+              {activeCategory && <span className="ml-1 text-tv-primary">in {CATEGORY_LABELS[activeCategory]}</span>}
+              {search && <span className="ml-1 text-tv-text-m">for &quot;{search}&quot;</span>}
+            </span>
+          ) : (
+            'All Tools'
+          )}
+        </SectionLabel>
 
         {/* Filters bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
