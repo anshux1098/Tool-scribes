@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Save, Loader2, User, AtSign, FileText, Moon, Sun, Trash2, Download, Eye, LogOut, Palette, Monitor } from 'lucide-react';
+import { Save, Loader2, User, AtSign, FileText, Moon, Sun, Trash2, Download, Eye, LogOut, Palette, Monitor, Sparkles, ExternalLink } from 'lucide-react';
+import ProfileSettingsModal from '@/components/ProfileSettingsModal';
 import { useAuth, signOut } from '@/hooks/useAuth';
 import { useCurrentProfile } from '@/hooks/useProfile';
 import { useTheme } from 'next-themes';
@@ -21,7 +22,8 @@ const sections: { key: SettingsSection; label: string; icon: React.ElementType }
 export default function SettingsPage() {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
-  const { profile, loading: profileLoading, updateProfile } = useCurrentProfile();
+  const { profile, loading: profileLoading, updateProfile, refetch: refetchProfile } = useCurrentProfile();
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
   const { theme, setTheme } = useTheme();
   const [activeSection, setActiveSection] = useState<SettingsSection>('profile');
 
@@ -176,6 +178,26 @@ export default function SettingsPage() {
             className="flex items-center gap-1.5 px-4 py-2 bg-tv-primary text-white rounded-lg text-[13px] font-medium hover:bg-tv-primary-dark disabled:opacity-40 transition-colors">
             {savingProfile ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
             Save Profile
+          </button>
+        </div>
+
+        <div className="mt-8 p-4 rounded-xl border border-tv-border bg-s2/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Sparkles size={15} className="text-tv-primary" />
+              <span className="text-[13px] font-semibold text-tv-text font-syne">Editorial Showcase & Badges</span>
+            </div>
+            <p className="text-[12px] text-tv-text-s">
+              Upload banner, customize curator badge, set signature quote, social links, and manage your &quot;Currently Loving&quot; shelf.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setProfileModalOpen(true)}
+            className="px-3.5 py-1.5 rounded-lg border border-tv-border bg-surface text-tv-text text-[12px] font-medium hover:border-tv-primary hover:text-tv-primary transition-colors whitespace-nowrap flex items-center gap-1.5 shadow-sm"
+          >
+            <ExternalLink size={13} />
+            Full Profile Editor
           </button>
         </div>
       </div>
@@ -393,6 +415,14 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+    <ProfileSettingsModal
+      open={profileModalOpen}
+      onClose={() => setProfileModalOpen(false)}
+      onSaved={() => {
+        refetchProfile();
+        setProfileModalOpen(false);
+      }}
+    />
     </>
   );
 }
