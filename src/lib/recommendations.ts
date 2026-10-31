@@ -98,14 +98,11 @@ export function reasonLabel(reasonType: string): string {
 
 export async function buildToolRecs(toolUuid: string, limit = 6): Promise<RecItem[]> {
   const recUuids = await getToolRecommendations(toolUuid, limit);
-  const items = await fetchToolDetails(recUuids.length > 0 ? recUuids : []);
+  if (recUuids.length === 0) return [];
+  const items = await fetchToolDetails(recUuids);
   for (const item of items) {
-    item.reason = 'Users who saved this also saved this';
+    item.reason = 'Curators who saved this also saved';
     item.reasonType = 'collaborative';
-  }
-  if (items.length === 0) {
-    const fallback = await getColdStartTrending(limit);
-    return fallback;
   }
   return items;
 }
