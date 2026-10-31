@@ -454,11 +454,147 @@ export function useTools() {
     console.log('[AI PROFILE] saved profile');
   }, [resolveUuidOrWarn, tools]);
 
+  /**
+   * Fetch a single tool by numeric id when deep-linked or not present in the loaded page.
+   * Resolves the UUID via `resolveUuid`, queries Supabase, builds the full Tool object
+   * with vault and author metadata, and adds it to `tools` state.
+   */
+  const fetchSingleTool = useCallback(async (numId: number): Promise<(Tool & { _uuid: string }) | null> => {
+    const loaded = toolsRef.current.find(t => t.id === numId);
+    if (loaded) return loaded;
+    if (!isSupabaseConfigured) return null;
+
+    const uuid = await resolveUuid(numId);
+    if (!uuid) return null;
+
+    try {
+      const { data: toolRow, error: tErr } = await supabase
+        .from('tools')
+        .select('*')
+        .eq('id', uuid)
+        .maybeSingle();
+
+      if (tErr || !toolRow) return null;
+
+      let vaultItem: Record<string, unknown> | null = null;
+      let isUpvoted = false;
+
+      if (user) {
+        const [{ data: vData }, { data: uData }] = await Promise.all([
+          supabase.from('vault_items').select('*').eq('user_id', user.id).eq('tool_id', uuid).maybeSingle(),
+          supabase.from('upvotes').select('id').eq('user_id', user.id).eq('tool_id', uuid).maybeSingle(),
+        ]);
+        vaultItem = (vData as Record<string, unknown>) ?? null;
+        isUpvoted = !!uData;
+      }
+
+      const mapped = rowToTool(
+        toolRow as Record<string, unknown>,
+        vaultItem,
+        isUpvoted ? new Set([uuid]) : undefined
+      );
+
+      const authorId = (toolRow as Record<string, unknown>).added_by as string | undefined;
+      if (authorId) {
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('username, display_name')
+          .eq('user_id', authorId)
+          .maybeSingle();
+        if (prof) {
+          const p = prof as Record<string, unknown>;
+          if (p.username) mapped.addedByUsername = p.username as string;
+          mapped.addedByDisplayName = (p.display_name as string) || (p.username as string) || undefined;
+        }
+      }
+
+      if (uuidIndex) uuidIndex.set(mapped.id, mapped._uuid);
+      setTools(prev => prev.some(t => t.id === mapped.id) ? prev : [...prev, mapped]);
+      return mapped;
+    } catch (e) {
+      console.error('[useTools] fetchSingleTool error:', e);
+      return null;
+    }
+  }, [user, resolveUuid]);
+
+  /**
+   * Ensure an array of tool UUIDs is present in `tools` state.
+   * Missing rows are fetched in a single `.in('id', ...)` batch with vault and author metadata.
+   */
+  const ensureToolsLoaded = useCallback(async (uuids: string[]): Promise<void> => {
+    if (!isSupabaseConfigured || uuids.length === 0) return;
+    const missingUuids = uuids.filter(u => !toolsRef.current.some(t => t._uuid === u));
+    if (missingUuids.length === 0) return;
+
+    try {
+      const { data: toolRows, error } = await supabase
+        .from('tools')
+        .select('*')
+        .in('id', missingUuids);
+
+      if (error || !toolRows || toolRows.length === 0) return;
+
+      const vaultMap = new Map<string, Record<string, unknown>>();
+      const upvotedIds = new Set<string>();
+
+      if (user) {
+        const [{ data: vData }, { data: uData }] = await Promise.all([
+          supabase.from('vault_items').select('*').eq('user_id', user.id).in('tool_id', missingUuids),
+          supabase.from('upvotes').select('tool_id').eq('user_id', user.id).in('tool_id', missingUuids),
+        ]);
+        if (vData) {
+          for (const row of vData) vaultMap.set((row as Record<string, unknown>).tool_id as string, row as Record<string, unknown>);
+        }
+        if (uData) {
+          for (const row of uData) upvotedIds.add((row as Record<string, unknown>).tool_id as string);
+        }
+      }
+
+      const authorIds = [...new Set((toolRows as Record<string, unknown>[]).map(r => r.added_by).filter(Boolean))];
+      const profileMap = new Map<string, { username?: string; displayName?: string }>();
+      if (authorIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('user_id, username, display_name')
+          .in('user_id', authorIds);
+        if (profiles) {
+          for (const p of profiles as Record<string, unknown>[]) {
+            profileMap.set(p.user_id as string, { username: p.username as string | undefined, displayName: p.display_name as string | undefined });
+          }
+        }
+      }
+
+      const mapped = (toolRows as Record<string, unknown>[]).map(row => {
+        const t = rowToTool(row, vaultMap.get(row.id as string) ?? null, upvotedIds);
+        const authorId = row.added_by as string | undefined;
+        if (authorId && profileMap.has(authorId)) {
+          const p = profileMap.get(authorId)!;
+          if (p.username) t.addedByUsername = p.username;
+          t.addedByDisplayName = p.displayName || p.username || undefined;
+        }
+        return t;
+      });
+
+      for (const t of mapped) {
+        if (uuidIndex) uuidIndex.set(t.id, t._uuid);
+      }
+
+      setTools(prev => {
+        const existingUuids = new Set(prev.map(p => p._uuid));
+        const trulyNew = mapped.filter(m => !existingUuids.has(m._uuid));
+        return trulyNew.length > 0 ? [...prev, ...trulyNew] : prev;
+      });
+    } catch (e) {
+      console.error('[useTools] ensureToolsLoaded failed:', e);
+    }
+  }, [user]);
+
   return {
     tools, loading, error, refetch: fetchAll,
     addTool, toggleFavorite, toggleUpvote, saveToVault,
     updateNotes, addTag, removeTag, recordVisit,
     removeFromVault, updateScreenshot, updateAiProfile,
     fetchMore, hasMore: nextCursor !== null,
+    fetchSingleTool, ensureToolsLoaded,
   };
 }

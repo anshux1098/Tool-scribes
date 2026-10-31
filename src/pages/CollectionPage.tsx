@@ -24,11 +24,12 @@ interface CollectionPageProps {
    * logged-out visitor.
    */
   loading?: boolean;
+  onEnsureToolsLoaded?: (uuids: string[]) => Promise<void>;
 }
 
 export default function CollectionPage({
   tools, collections, onRename, onDelete, onToggleFavorite, onRemoveFromCollection, onTogglePublic,
-  loading,
+  loading, onEnsureToolsLoaded,
 }: CollectionPageProps) {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -49,12 +50,16 @@ export default function CollectionPage({
         .select('tool_id')
         .eq('collection_id', collection._uuid)
     )
-      .then(({ data }) => {
-        setToolUuids((data ?? []).map(d => d.tool_id as string));
+      .then(async ({ data }) => {
+        const ids = (data ?? []).map(d => d.tool_id as string);
+        setToolUuids(ids);
+        if (onEnsureToolsLoaded && ids.length > 0) {
+          await onEnsureToolsLoaded(ids);
+        }
         setLoadingTools(false);
       })
       .catch((e) => { console.error('[CollectionPage] fetch tool IDs failed:', e); setLoadingTools(false); });
-  }, [collection?._uuid]);
+  }, [collection?._uuid, onEnsureToolsLoaded]);
 
   const collectionTools = useMemo(() =>
     tools.filter(t => t._uuid && toolUuids.includes(t._uuid)),

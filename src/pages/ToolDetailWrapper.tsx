@@ -31,16 +31,29 @@ export default function ToolDetailWrapper() {
   const [toolCollectionIds, setToolCollectionIds] = useState<number[]>([]);
   const [suggestModalOpen, setSuggestModalOpen] = useState(false);
   const { user, isAdmin, isModerator } = useAuth();
-  const { tools, loading, addTool, toggleUpvote, saveToVault, toggleFavorite, removeFromVault, updateNotes, addTag, removeTag, recordVisit, updateScreenshot, updateAiProfile } = useTools();
+  const { tools, loading, addTool, toggleUpvote, saveToVault, toggleFavorite, removeFromVault, updateNotes, addTag, removeTag, recordVisit, updateScreenshot, updateAiProfile, fetchSingleTool } = useTools();
   const { collections, addToolToCollection, removeToolFromCollection, createCollection } = useCollections();
   const search = useSearch();
 
+  const [fetchingFallback, setFetchingFallback] = useState(false);
   const currentTool = id ? tools.find(t => t.id === Number(id)) : null;
   const [healthStatus, setHealthStatus] = useState<string | undefined>();
   const { reviews, myReview, submitReview, deleteReview } = useReviews(currentTool?._uuid);
   const mountedRef = useRef(true);
 
   useEffect(() => { return () => { mountedRef.current = false; }; }, []);
+
+  useEffect(() => {
+    if (!id) return;
+    const numId = Number(id);
+    if (!Number.isFinite(numId)) return;
+    if (!currentTool && !loading && !fetchingFallback) {
+      setFetchingFallback(true);
+      fetchSingleTool(numId).finally(() => {
+        if (mountedRef.current) setFetchingFallback(false);
+      });
+    }
+  }, [id, currentTool, loading, fetchingFallback, fetchSingleTool]);
 
   useEffect(() => {
     if (!currentTool?._uuid) { setHealthStatus(undefined); return; }
@@ -145,7 +158,7 @@ export default function ToolDetailWrapper() {
         onUpdateScreenshot={updateScreenshot}
         isAdmin={isAdmin}
         onRegenerateAiProfile={handleRegenerateAiProfile}
-        loading={loading}
+        loading={loading || fetchingFallback}
       />
       {currentTool?._uuid && (
         <div className="max-w-6xl mx-auto px-6 pb-4">
