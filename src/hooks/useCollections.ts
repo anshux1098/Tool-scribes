@@ -22,16 +22,30 @@ function rowToCollection(
   };
 }
 
+// Module-level cache to eliminate re-fetching on back-forward navigation
+let cachedCollections: (Collection & { _uuid: string })[] = [];
+let cachedCollectionsUserKey: string | null = null;
+let inflightCollectionsPromise: Promise<void> | null = null;
+
 export function useCollections() {
-  const { user } = useAuth();
-  const [collections, setCollections] = useState<(Collection & { _uuid: string })[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { user, loading: authLoading } = useAuth();
+  const userKey = user ? user.id : 'anon';
+  const hasFreshCache = cachedCollectionsUserKey === userKey && (!user || cachedCollections.length > 0);
+
+  const [collections, setCollections] = useState<(Collection & { _uuid: string })[]>(() => hasFreshCache ? cachedCollections : []);
+  const [loading, setLoading] = useState(() => !hasFreshCache);
   const [error, setError] = useState<string | null>(null);
 
   const fetchCollections = useCallback(async () => {
-    setLoading(true);
+    if (cachedCollectionsUserKey === userKey && cachedCollections.length > 0) {
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError(null);
     if (!isSupabaseConfigured || !user) {
+      cachedCollections = [];
+      cachedCollectionsUserKey = userKey;
       setCollections([]);
       setLoading(false);
       return;
@@ -49,6 +63,8 @@ export function useCollections() {
         const countVal = Array.isArray(ctArr) ? (ctArr[0]?.count ?? 0) : (ctArr as { count: number } | undefined)?.count ?? 0;
         return rowToCollection(r as unknown as CollectionRow, countVal);
       });
+      cachedCollections = mapped;
+      cachedCollectionsUserKey = userKey;
       setCollections(mapped);
     } catch (e) {
       console.error('[useCollections] fetchCollections failed:', e);
@@ -56,9 +72,21 @@ export function useCollections() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, userKey]);
 
-  useEffect(() => { fetchCollections(); }, [fetchCollections]);
+  useEffect(() => {
+    if (authLoading) return;
+    if (cachedCollectionsUserKey === userKey && (!user || cachedCollections.length > 0)) {
+      setCollections(cachedCollections);
+      setLoading(false);
+      return;
+    }
+    if (!inflightCollectionsPromise) {
+      inflightCollectionsPromise = fetchCollections().finally(() => {
+        inflightCollectionsPromise = null;
+      });
+    }
+  }, [authLoading, userKey, fetchCollections, user]);
 
   const getUuid = useCallback((numId: number): string | null => {
     return collections.find(c => c.id === numId)?._uuid ?? null;

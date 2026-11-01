@@ -130,17 +130,31 @@ function buildKeysetFilter(cursor: ToolCursor): string {
   return `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`;
 }
 
+// Shared module-level cache to eliminate re-fetching waterfalls when navigating back/forth
+let cachedTools: (Tool & { _uuid: string })[] = [];
+let cachedUserKey: string | null = null;
+let cachedNextCursor: ToolCursor | null = null;
+let inflightPromise: Promise<void> | null = null;
+
 export function useTools() {
-  const { user } = useAuth();
-  const [tools, setTools] = useState<(Tool & { _uuid: string })[]>([]);
+  const { user, loading: authLoading } = useAuth();
+  const userKey = user ? user.id : 'anon';
+  const hasFreshCache = cachedTools.length > 0 && cachedUserKey === userKey;
+
+  const [tools, setTools] = useState<(Tool & { _uuid: string })[]>(() => hasFreshCache ? cachedTools : []);
   const toolsRef = useRef(tools);
   toolsRef.current = tools;
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !hasFreshCache);
   const [error, setError] = useState<string | null>(null);
-  const [nextCursor, setNextCursor] = useState<ToolCursor | null>(null);
+  const [nextCursor, setNextCursor] = useState<ToolCursor | null>(() => hasFreshCache ? cachedNextCursor : null);
 
   const fetchAll = useCallback(async (cursor?: ToolCursor) => {
-    setLoading(true);
+    // If not paging and cache is already populated for this user, keep UI responsive without full-page spinner
+    if (!cursor && cachedTools.length > 0 && cachedUserKey === userKey) {
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError(null);
     if (!isSupabaseConfigured) {
       setError(supabaseInitError);
@@ -151,36 +165,32 @@ export function useTools() {
       let query = supabase
         .from('tools')
         .select('*')
-        // id is the tiebreaker. Without it, rows sharing a created_at have no
-        // defined relative order and the keyset boundary becomes arbitrary.
         .order('created_at', { ascending: false })
         .order('id', { ascending: false })
         .limit(PAGE_SIZE);
       if (cursor) {
         query = query.or(buildKeysetFilter(cursor));
       }
-      const { data: toolRows, error: toolsErr } = await query;
-      if (toolsErr) throw toolsErr;
 
-      let vaultMap = new Map<string, Record<string, unknown>>();
-      let upvotedIds = new Set<string>();
+      // Parallelize base queries: tools + (vault_items & upvotes if authenticated)
+      const [toolsRes, vaultRes, upvotesRes] = await Promise.all([
+        query,
+        user ? supabase.from('vault_items').select('*').eq('user_id', user.id) : Promise.resolve({ data: null, error: null }),
+        user ? supabase.from('upvotes').select('tool_id').eq('user_id', user.id) : Promise.resolve({ data: null, error: null }),
+      ]);
 
-      if (user) {
-        const { data: vaultRows } = await supabase
-          .from('vault_items')
-          .select('*')
-          .eq('user_id', user.id);
-        vaultMap = new Map((vaultRows ?? []).map(v => [v.tool_id as string, v as Record<string, unknown>]));
+      if (toolsRes.error) throw toolsRes.error;
+      const toolRows = toolsRes.data ?? [];
 
-        const { data: upvoteRows } = await supabase
-          .from('upvotes')
-          .select('tool_id')
-          .eq('user_id', user.id);
-        upvotedIds = new Set((upvoteRows ?? []).map(u => u.tool_id as string));
-      }
+      const vaultMap = new Map<string, Record<string, unknown>>(
+        ((vaultRes.data ?? []) as Array<Record<string, unknown>>).map(v => [v.tool_id as string, v])
+      );
+      const upvotedIds = new Set<string>(
+        ((upvotesRes.data ?? []) as Array<{ tool_id: string }>).map(u => u.tool_id)
+      );
 
       // Batch-fetch profiles for tool authors
-      const addedByIds = [...new Set((toolRows ?? []).map(r => (r as Record<string, unknown>).added_by as string).filter(Boolean))];
+      const addedByIds = [...new Set(toolRows.map(r => (r as Record<string, unknown>).added_by as string).filter(Boolean))];
       let profileMap = new Map<string, { username: string | null; displayName: string }>();
       if (addedByIds.length > 0) {
         const { data: profRows } = await supabase
@@ -197,7 +207,7 @@ export function useTools() {
         }
       }
 
-      const mapped = (toolRows ?? []).map(row => {
+      const mapped = toolRows.map(row => {
         const t = rowToTool(row as Record<string, unknown>, vaultMap.get(row.id) ?? null, upvotedIds);
         const authorId = (row as Record<string, unknown>).added_by as string | undefined;
         if (authorId && profileMap.has(authorId)) {
@@ -208,25 +218,30 @@ export function useTools() {
         return t;
       });
 
-      const last = toolRows?.[toolRows.length - 1];
-      // Only offer a next page when this one was genuinely full. Otherwise the
-      // caller pages past the end and gets an empty result that looks like
-      // "no more tools" by accident rather than by exhaustion.
-      const full = mapped.length === PAGE_SIZE && last;
-      setNextCursor(full ? {
+      const last = toolRows[toolRows.length - 1];
+      const full = mapped.length === PAGE_SIZE && !!last;
+      const cursorObj: ToolCursor | null = full ? {
         createdAt: last.created_at as string,
         id: last.id as string,
-      } : null);
+      } : null;
+      setNextCursor(cursorObj);
 
-      // Keep the hash -> uuid index warm so deep links to already-seen tools
-      // never need the full id query.
+      // Keep the hash -> uuid index warm so deep links to already-seen tools never need the full id query
       for (const t of mapped) {
         if (uuidIndex) uuidIndex.set(t.id, t._uuid);
       }
 
       if (cursor) {
-        setTools(prev => [...prev, ...mapped]);
+        setTools(prev => {
+          const next = [...prev, ...mapped];
+          cachedTools = next;
+          cachedNextCursor = cursorObj;
+          return next;
+        });
       } else {
+        cachedTools = mapped;
+        cachedUserKey = userKey;
+        cachedNextCursor = cursorObj;
         setTools(mapped);
       }
     } catch (e) {
@@ -235,9 +250,25 @@ export function useTools() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, userKey]);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  useEffect(() => {
+    // Wait until auth session check finishes to prevent duplicate anonymous -> authenticated query waterfall
+    if (authLoading) return;
+
+    if (cachedTools.length > 0 && cachedUserKey === userKey) {
+      setTools(cachedTools);
+      setNextCursor(cachedNextCursor);
+      setLoading(false);
+      return;
+    }
+
+    if (!inflightPromise) {
+      inflightPromise = fetchAll().finally(() => {
+        inflightPromise = null;
+      });
+    }
+  }, [authLoading, userKey, fetchAll]);
 
   const fetchMore = useCallback(() => {
     if (nextCursor && !loading) {

@@ -32,6 +32,13 @@ const ALL_CATEGORIES: { key: ToolCategory; icon: typeof Code; label: string; des
   { key: 'util', icon: Wrench, label: 'Utilities', desc: 'Everyday useful tools' },
 ];
 
+// In-memory cache for Discover page auxiliary data across tab switches
+let cachedTrendingCollections: (Collection & { _uuid: string; followerCount?: number; curatorUsername?: string })[] = [];
+let cachedSaveCounts: Record<string, number> = {};
+let cachedVaultRecs: RecItem[] = [];
+let cachedVaultRecsUserKey: string | null = null;
+let cachedPopularAlts: { toolId: string; toolName: string; toolIcon: string; toolFavicon: string; alternatives: { id: string; name: string; votes: number }[] }[] = [];
+
 export default function DiscoverPage({ tools, onUpvote, onSave, onAddTool, loading }: DiscoverPageProps) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -39,22 +46,33 @@ export default function DiscoverPage({ tools, onUpvote, onSave, onAddTool, loadi
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<ToolCategory | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>('newest');
-  const [trendingCollections, setTrendingCollections] = useState<(Collection & { _uuid: string; followerCount?: number; curatorUsername?: string })[]>([]);
+  // Module-level cache for Discover auxiliary data to eliminate re-fetching on tab switches
+  const [trendingCollections, setTrendingCollections] = useState<(Collection & { _uuid: string; followerCount?: number; curatorUsername?: string })[]>(() => cachedTrendingCollections);
   /** vault_items rows per tool, keyed by tool uuid. */
-  const [saveCounts, setSaveCounts] = useState<Record<string, number>>({});
-  const [vaultRecs, setVaultRecs] = useState<RecItem[]>([]);
-  const [popularAlts, setPopularAlts] = useState<{ toolId: string; toolName: string; toolIcon: string; toolFavicon: string; alternatives: { id: string; name: string; votes: number }[] }[]>([]);
+  const [saveCounts, setSaveCounts] = useState<Record<string, number>>(() => cachedSaveCounts);
+  const [vaultRecs, setVaultRecs] = useState<RecItem[]>(() => cachedVaultRecs);
+  const [popularAlts, setPopularAlts] = useState<{ toolId: string; toolName: string; toolIcon: string; toolFavicon: string; alternatives: { id: string; name: string; votes: number }[] }[]>(() => cachedPopularAlts);
   const mountedRef = useRef(true);
 
   useEffect(() => { return () => { mountedRef.current = false; }; }, []);
 
   useEffect(() => {
-    fetchPopularAlternatives(6).then(items => { if (mountedRef.current) setPopularAlts(items); }).catch((e) => console.error('[DiscoverPage] fetch popular alternatives failed:', e));
+    if (cachedPopularAlts.length > 0) return;
+    fetchPopularAlternatives(6).then(items => {
+      cachedPopularAlts = items;
+      if (mountedRef.current) setPopularAlts(items);
+    }).catch((e) => console.error('[DiscoverPage] fetch popular alternatives failed:', e));
   }, []);
 
   useEffect(() => {
     if (user && !loading) {
+      if (cachedVaultRecsUserKey === user.id && cachedVaultRecs.length > 0) {
+        setVaultRecs(cachedVaultRecs);
+        return;
+      }
       buildVaultRecs(user.id, 6).then(items => {
+        cachedVaultRecs = items;
+        cachedVaultRecsUserKey = user.id;
         if (mountedRef.current) setVaultRecs(items);
       }).catch((e) => console.error('[DiscoverPage] build vault recommendations failed:', e));
     }
@@ -62,70 +80,80 @@ export default function DiscoverPage({ tools, onUpvote, onSave, onAddTool, loadi
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
-    // Fetch public collections
-    void Promise.resolve(
+    if (cachedTrendingCollections.length > 0 && Object.keys(cachedSaveCounts).length > 0) {
+      return;
+    }
+
+    // Parallelize collections fetch and save counts fetch
+    Promise.all([
       supabase
         .from('collections')
         .select('*, collection_tools(count)')
         .eq('is_public', true)
         .order('updated_at', { ascending: false })
-        .limit(6)
-    )
-      .then(({ data }) => {
-        if (!data || !mountedRef.current) return;
-        const colIds = data.map(r => (r as Record<string, unknown>).id as string);
-        const mapped: (Collection & { _uuid: string })[] = (data as Array<Record<string, unknown>>).map(r => {
-          const ctArr = r.collection_tools as Array<{ count: number }> | undefined;
-          const countVal = Array.isArray(ctArr) ? (ctArr[0]?.count ?? 0) : (ctArr as { count: number } | undefined)?.count ?? 0;
-          return {
-            id: hashId(r.id as string),
-            _uuid: r.id as string,
-            name: r.name as string,
-            description: (r.description as string) ?? '',
-            isPublic: true,
-            toolCount: countVal,
-            createdAt: new Date(r.created_at as string).getTime(),
-            updatedAt: new Date(r.updated_at as string).getTime(),
-          };
-        });
-        // Fetch follower counts for trending
-        if (colIds.length > 0) {
-          void Promise.resolve(
-            supabase.from('collection_followers').select('collection_id').in('collection_id', colIds)
-          )
-            .then(({ data: fData }) => {
-              if (!mountedRef.current) return;
-              const fMap = new Map<string, number>();
-              for (const f of (fData ?? []) as Array<{ collection_id: string }>) {
-                fMap.set(f.collection_id, (fMap.get(f.collection_id) || 0) + 1);
-              }
-              const now = Date.now();
-              const scored = mapped.map(c => {
-                const hoursSinceUpdate = (now - c.updatedAt) / 3600000;
-                const score = (fMap.get(c._uuid) ?? 0) * 3 + (1 / (hoursSinceUpdate + 2)) * 100;
-                return { ...c, followerCount: fMap.get(c._uuid) ?? 0, _score: score };
-              }).sort((a, b) => b._score - a._score).slice(0, 5);
-              if (mountedRef.current) setTrendingCollections(scored);
-            })
-            .catch((e) => console.error('[DiscoverPage] fetch collection follower counts failed:', e));
-        }
-      })
-      .catch((e) => console.error('[DiscoverPage] fetch public collections failed:', e));
-    // Fetch save counts
-    Promise.resolve(
+        .limit(6),
       supabase
         .from('vault_items')
         .select('tool_id')
-    )
-      .then(({ data }) => {
-        if (!data || !mountedRef.current) return;
-        const counts: Record<string, number> = {};
-        for (const row of data as Array<{ tool_id: string }>) {
-          counts[row.tool_id] = (counts[row.tool_id] || 0) + 1;
+    ])
+      .then(async ([{ data: colsData }, { data: vaultData }]) => {
+        if (!mountedRef.current) return;
+
+        // Process save counts
+        if (vaultData) {
+          const counts: Record<string, number> = {};
+          for (const row of vaultData as Array<{ tool_id: string }>) {
+            counts[row.tool_id] = (counts[row.tool_id] || 0) + 1;
+          }
+          cachedSaveCounts = counts;
+          setSaveCounts(counts);
         }
-        setSaveCounts(counts);
+
+        // Process collections & followers
+        if (colsData) {
+          const colIds = colsData.map(r => (r as Record<string, unknown>).id as string);
+          const mapped: (Collection & { _uuid: string })[] = (colsData as Array<Record<string, unknown>>).map(r => {
+            const ctArr = r.collection_tools as Array<{ count: number }> | undefined;
+            const countVal = Array.isArray(ctArr) ? (ctArr[0]?.count ?? 0) : (ctArr as { count: number } | undefined)?.count ?? 0;
+            return {
+              id: hashId(r.id as string),
+              _uuid: r.id as string,
+              name: r.name as string,
+              description: (r.description as string) ?? '',
+              isPublic: true,
+              toolCount: countVal,
+              createdAt: new Date(r.created_at as string).getTime(),
+              updatedAt: new Date(r.updated_at as string).getTime(),
+            };
+          });
+
+          if (colIds.length > 0) {
+            const { data: fData } = await supabase
+              .from('collection_followers')
+              .select('collection_id')
+              .in('collection_id', colIds);
+
+            if (!mountedRef.current) return;
+            const fMap = new Map<string, number>();
+            for (const f of (fData ?? []) as Array<{ collection_id: string }>) {
+              fMap.set(f.collection_id, (fMap.get(f.collection_id) || 0) + 1);
+            }
+            const now = Date.now();
+            const scored = mapped.map(c => {
+              const hoursSinceUpdate = (now - c.updatedAt) / 3600000;
+              const score = (fMap.get(c._uuid) ?? 0) * 3 + (1 / (hoursSinceUpdate + 2)) * 100;
+              return { ...c, followerCount: fMap.get(c._uuid) ?? 0, _score: score };
+            }).sort((a, b) => b._score - a._score).slice(0, 5);
+
+            cachedTrendingCollections = scored;
+            setTrendingCollections(scored);
+          } else {
+            cachedTrendingCollections = mapped;
+            setTrendingCollections(mapped);
+          }
+        }
       })
-      .catch((e) => console.error('[DiscoverPage] fetch save counts failed:', e));
+      .catch((e) => console.error('[DiscoverPage] fetch discover auxiliary data failed:', e));
   }, []);
 
   // Trending score: (upvotes * 3 + saves * 2) / (hours_since_added + 2)^1.5
