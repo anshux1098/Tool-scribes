@@ -49,7 +49,7 @@ export default function CollectionCard({ collection, index, linkTo }: Collection
     >
       {coverUrl ? (
         <div className="w-full h-32 overflow-hidden flex-shrink-0">
-          <img src={coverUrl} alt={collection.name} className="w-full h-full object-cover" />
+          <img src={coverUrl} alt={collection.name} className="w-full h-full object-cover" loading="lazy" decoding="async" />
         </div>
       ) : (
         <div
@@ -97,7 +97,7 @@ export default function CollectionCard({ collection, index, linkTo }: Collection
         <div className="flex items-center gap-1 px-4 pb-2 w-full">
           {toolStrip.map((t, i) => (
             <div key={t._uuid || i} className="w-6 h-6 rounded-md bg-s2 flex items-center justify-center overflow-hidden border border-tv-border/30 -ml-1 first:ml-0">
-              {t.favicon ? <img src={t.favicon} className="w-3.5 h-3.5 object-contain" alt="" /> : <span className="text-[9px]">{t.icon}</span>}
+              {t.favicon ? <img src={t.favicon} className="w-3.5 h-3.5 object-contain" alt="" loading="lazy" decoding="async" /> : <span className="text-[9px]">{t.icon}</span>}
             </div>
           ))}
           {tools.length > 5 && (

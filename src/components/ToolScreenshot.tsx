@@ -49,6 +49,7 @@ export default function ToolScreenshot({ screenshotUrl, ogImage, toolName, canUp
             alt={toolName}
             className="w-full h-full object-cover"
             loading="lazy"
+            decoding="async"
             onError={() => setImgError(true)}
           />
         ) : (

@@ -380,7 +380,7 @@ export default function DiscoverPage({ tools, onUpvote, onSave, onAddTool, loadi
                   className="flex-shrink-0 w-52 flex flex-col items-start gap-2.5 p-4 bg-surface border-2 border-tv-border rounded-xl text-left transition-all duration-200 hover:-translate-x-1 hover:-translate-y-1 hover:shadow-brutal-hover shadow-brutal"
                 >
                   <div className="w-9 h-9 rounded-lg bg-s2 flex items-center justify-center overflow-hidden flex-shrink-0">
-                    {tool.favicon ? <img src={tool.favicon} className="w-5 h-5 object-contain" alt="" /> : <span className="text-base">{tool.icon}</span>}
+                    {tool.favicon ? <img src={tool.favicon} className="w-5 h-5 object-contain" alt="" loading="lazy" decoding="async" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} /> : <span className="text-base">{tool.icon}</span>}
                   </div>
                   <div className="min-w-0 w-full">
                     <p className="text-[13px] font-syne text-tv-text truncate">{tool.name}</p>
@@ -419,7 +419,7 @@ export default function DiscoverPage({ tools, onUpvote, onSave, onAddTool, loadi
                   className="flex-shrink-0 w-52 flex flex-col items-start gap-2.5 p-4 bg-surface border-2 border-tv-border rounded-xl text-left transition-all duration-200 hover:-translate-x-1 hover:-translate-y-1 hover:shadow-brutal-hover shadow-brutal"
                 >
                   <div className="w-9 h-9 rounded-lg bg-s2 flex items-center justify-center overflow-hidden flex-shrink-0">
-                    {tool.favicon ? <img src={tool.favicon} className="w-5 h-5 object-contain" alt="" /> : <span className="text-base">{tool.icon}</span>}
+                    {tool.favicon ? <img src={tool.favicon} className="w-5 h-5 object-contain" alt="" loading="lazy" decoding="async" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} /> : <span className="text-base">{tool.icon}</span>}
                   </div>
                   <div className="min-w-0 w-full">
                     <p className="text-[13px] font-syne text-tv-text truncate">{tool.name}</p>
@@ -458,7 +458,7 @@ export default function DiscoverPage({ tools, onUpvote, onSave, onAddTool, loadi
                   className="flex-shrink-0 w-52 flex flex-col items-start gap-2.5 p-4 bg-surface border-2 border-tv-border rounded-xl text-left transition-all duration-200 hover:-translate-x-1 hover:-translate-y-1 hover:shadow-brutal-hover shadow-brutal"
                 >
                   <div className="w-9 h-9 rounded-lg bg-s2 flex items-center justify-center overflow-hidden flex-shrink-0">
-                    {tool.favicon ? <img src={tool.favicon} className="w-5 h-5 object-contain" alt="" /> : <span className="text-base">{tool.icon}</span>}
+                    {tool.favicon ? <img src={tool.favicon} className="w-5 h-5 object-contain" alt="" loading="lazy" decoding="async" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} /> : <span className="text-base">{tool.icon}</span>}
                   </div>
                   <div className="min-w-0 w-full">
                     <p className="text-[13px] font-syne text-tv-text truncate">{tool.name}</p>
@@ -739,7 +739,7 @@ function FeaturedCard({ tool, onSave, user }: { tool: Tool; onSave: (id: number)
       <div className="flex-1 flex flex-col justify-center p-6 sm:p-8">
         <div className="flex items-center gap-3 mb-3">
           <div className="w-10 h-10 rounded-xl bg-s2 flex items-center justify-center overflow-hidden flex-shrink-0">
-            {tool.favicon ? <img src={tool.favicon} className="w-6 h-6 object-contain" alt="" /> : <span className="text-xl">{tool.icon}</span>}
+            {tool.favicon ? <img src={tool.favicon} className="w-6 h-6 object-contain" alt="" loading="lazy" decoding="async" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} /> : <span className="text-xl">{tool.icon}</span>}
           </div>
           <div>
             <h3 className="font-syne text-[22px] text-tv-text leading-tight">{tool.name}</h3>
@@ -803,7 +803,7 @@ function AllToolsCard({ tool, index, onUpvote, onSave }: { tool: Tool; index: nu
     >
       <div className="flex items-start gap-3 px-4 pt-4 pb-2">
         <div className="w-9 h-9 rounded-lg bg-s2 flex items-center justify-center overflow-hidden flex-shrink-0">
-          {tool.favicon ? <img src={tool.favicon} className="w-5.5 h-5.5 object-contain" alt="" /> : <span className="text-base">{tool.icon}</span>}
+          {tool.favicon ? <img src={tool.favicon} className="w-5.5 h-5.5 object-contain" alt="" loading="lazy" decoding="async" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} /> : <span className="text-base">{tool.icon}</span>}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
