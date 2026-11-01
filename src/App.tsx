@@ -10,8 +10,8 @@ import { setSearchEngine, SimpleSearchEngine } from "@/lib/search";
 import { LazyFallback } from "@/components/LazyFallback";
 import { AuthProvider } from "@/hooks/useAuth";
 
-/* ── Main pages — lazy loaded ──────────────────────────────────────── */
-const Index = lazy(() => import("./pages/Index.tsx"));
+/* ── Main pages ────────────────────────────────────────────────────── */
+import Index from "./pages/Index.tsx";
 const ToolDetailWrapper = lazy(() => import("./pages/ToolDetailWrapper.tsx"));
 const CollectionDetailWrapper = lazy(() => import("./pages/CollectionDetailWrapper.tsx"));
 const PublicCollectionPage = lazy(() => import("./pages/PublicCollectionPage.tsx"));

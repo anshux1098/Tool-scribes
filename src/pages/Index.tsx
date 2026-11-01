@@ -14,8 +14,7 @@ const OnboardingModal = lazy(() => import('@/components/OnboardingModal'));
 const SearchEverywhere = lazy(() => import('@/components/SearchEverywhere'));
 const AskToolScribeModal = lazy(() => import('@/components/AskToolScribeModal'));
 
-/* Eager pages (lightweight - just render immediately) */
-import VaultPage from '@/pages/VaultPage';
+const VaultPage = lazy(() => import('@/pages/VaultPage'));
 import DiscoverPage from '@/pages/DiscoverPage';
 
 const ModalFallback = () => null;

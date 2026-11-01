@@ -1,14 +1,17 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { useParams } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
-import AuthModal from '@/components/AuthModal';
-import AddToCollectionModal from '@/components/AddToCollectionModal';
-import SubmitToolModal from '@/components/SubmitToolModal';
 import ToolDetailPage from '@/pages/ToolDetailPage';
-import SearchEverywhere from '@/components/SearchEverywhere';
 import ToolRecommendations from '@/components/ToolRecommendations';
 import AlternativesSection from '@/components/AlternativesSection';
-import SuggestAlternativeModal from '@/components/SuggestAlternativeModal';
+
+const AuthModal = lazy(() => import('@/components/AuthModal'));
+const AddToCollectionModal = lazy(() => import('@/components/AddToCollectionModal'));
+const SubmitToolModal = lazy(() => import('@/components/SubmitToolModal'));
+const SearchEverywhere = lazy(() => import('@/components/SearchEverywhere'));
+const SuggestAlternativeModal = lazy(() => import('@/components/SuggestAlternativeModal'));
+
+const ModalFallback = () => null;
 import { useTools } from '@/hooks/useTools';
 import { useAuth } from '@/hooks/useAuth';
 import { useCollections } from '@/hooks/useCollections';
@@ -202,6 +205,7 @@ export default function ToolDetailWrapper() {
           <ToolRecommendations toolUuid={currentTool._uuid} />
         </div>
       )}
+      <Suspense fallback={<ModalFallback />}>
       <AddToCollectionModal
         open={collectionModalOpen}
         onClose={() => setCollectionModalOpen(false)}
@@ -234,6 +238,7 @@ export default function ToolDetailWrapper() {
         category={search.filters.category}
         onCategoryChange={search.updateCategory}
       />
+      </Suspense>
     </div>
   );
 }
