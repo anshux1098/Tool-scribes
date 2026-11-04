@@ -1,4 +1,4 @@
-import { Plus, LogOut, LogIn, Loader2, Search, Send, Shield, Rss, Hash, User, Bookmark, PenLine, Settings, LayoutDashboard, FolderPlus, Layers, Bell, Sparkles, AlertCircle, Menu, X } from 'lucide-react';
+import { Scale, Plus, LogOut, LogIn, Loader2, Search, Send, Shield, Rss, Hash, User, Bookmark, PenLine, Settings, LayoutDashboard, FolderPlus, Layers, Bell, Sparkles, AlertCircle, Menu, X } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useAuth, signOut } from '@/hooks/useAuth';
@@ -205,6 +205,19 @@ export default function Navbar({ activeTab, onTabChange, onAddTool, onAuthClick,
         >
           <Layers size={12} />
           Collections
+        </button>
+
+        {/* Compare link */}
+        <button
+          onClick={() => navigate('/compare')}
+          className={`ml-1 px-3 py-1.5 rounded-md text-[13px] font-medium tracking-wide uppercase transition-all duration-150 flex items-center gap-1.5 whitespace-nowrap ${
+            location.pathname === '/compare'
+              ? 'bg-tv-text text-bg'
+              : 'text-tv-text-s hover:text-tv-text'
+          }`}
+        >
+          <Scale size={12} />
+          Compare
         </button>
 
         {/* Create Collection link */}

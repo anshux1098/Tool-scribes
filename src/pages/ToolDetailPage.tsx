@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ExternalLink, Star, Copy, Check, FolderPlus, Bookmark, Wrench, Clock, Sparkles, Globe, Shield, Monitor, MessageSquare, Plus, Send, Loader2, Trash2, Code } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Star, Scale, Copy, Check, FolderPlus, Bookmark, Wrench, Clock, Sparkles, Globe, Shield, Monitor, MessageSquare, Plus, Send, Loader2, Trash2, Code } from 'lucide-react';
 import { Tool, Collection, Review, CATEGORY_COLORS, CATEGORY_BG, CATEGORY_LABELS } from '@/lib/types';
 import type { HealthStatus } from '@/lib/health';
 import { askToolScribe } from '@/lib/ask-toolscribe';
@@ -241,6 +241,12 @@ export default function ToolDetailPage({
               <Trash2 size={13} /> Remove From Vault
             </button>
           )}
+          <button
+            onClick={() => navigate(`/compare?tools=${tool.id}`)}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-tv-border rounded-lg text-[13px] text-tv-text-s hover:text-tv-text hover:border-tv-border-l transition-colors"
+          >
+            <Scale size={13} /> Compare
+          </button>
           <button onClick={copyUrl} className="flex items-center gap-1.5 px-3 py-1.5 border border-tv-border rounded-lg text-[13px] text-tv-text-s hover:text-tv-text hover:border-tv-border-l transition-colors">
             {copied ? <Check size={13} className="text-tv-primary" /> : <Copy size={13} />}
             {copied ? 'Copied' : 'Copy URL'}

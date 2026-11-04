@@ -24,6 +24,7 @@ const MyCollectionsPage = lazy(() => import("./pages/MyCollectionsPage.tsx"));
 const MyReviewsPage = lazy(() => import("./pages/MyReviewsPage.tsx"));
 const MySubmissionsPage = lazy(() => import("./pages/MySubmissionsPage.tsx"));
 const CollectionsHubPage = lazy(() => import("./pages/CollectionsHubPage.tsx"));
+const ComparePage = lazy(() => import("./pages/ComparePage.tsx"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage.tsx"));
 const AuthCallbackPage = lazy(() => import("./pages/AuthCallbackPage.tsx"));
 const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage.tsx"));
@@ -75,6 +76,7 @@ function App() {
                     <Route path="/auth/callback" element={<AuthCallbackPage />} />
                     <Route path="/reset-password" element={<ResetPasswordPage />} />
                     <Route path="/collections" element={<CollectionsHubPage />} />
+                    <Route path="/compare" element={<ComparePage />} />
                     <Route path="/collections/me" element={<MyCollectionsPage />} />
                     <Route path="/reviews/me" element={<MyReviewsPage />} />
                     <Route path="/submissions/me" element={<MySubmissionsPage />} />
