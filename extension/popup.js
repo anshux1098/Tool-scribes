@@ -12,23 +12,212 @@ const CATEGORY_ICONS = {
   util: '🔧'
 };
 
+// Known accidental backfilled / duplicate tool UUIDs to purge from DB & storage
+const KNOWN_JUNK_UUIDS = new Set([
+  '625c0544-9a1d-4e11-b502-e141fb5de15e', // Extensions
+  'c631023c-889c-4eba-bf2b-4cd70c55828e', // Tool-scribes-beta
+  'c01cb956-4193-4599-9317-35287739ffed', // Duplicate Python Certification | freeCodeCamp.org
+  'cae4992f-18b9-4508-86bf-07f72d0e1e0a', // Duplicate Oracle MyLearn
+  'dd1025f4-2461-459a-baa4-9fe8494404f1', // Localhost #1
+  '7bf33712-9d2e-470c-8e4b-d813cb86656d'  // Localhost #2
+]);
+
 let currentTab = null;
+let isSavingInFlight = false;
+let activeTabBlockedReason = null;
+let activeTabExistingTool = null;
+
 let currentConfig = {
   supabaseUrl: DEFAULT_SUPABASE_URL,
   anonKey: DEFAULT_ANON_KEY,
   webappUrl: DEFAULT_WEBAPP_URL
 };
 
+// Extract clean normalized domain (e.g. "freecodecamp.org", "mylearn.oracle.com")
+function normalizeToolDomain(url) {
+  if (!url || typeof url !== 'string') return '';
+  try {
+    return new URL(url).hostname.replace(/^www\./i, '').toLowerCase();
+  } catch {
+    return url.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0].toLowerCase();
+  }
+}
+
+// Strict blocklist for internal browser pages, localhost, and ToolScribe's own domains
+function isBlockedToolUrl(url) {
+  if (!url || typeof url !== 'string') return true;
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return true;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return true;
+  const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+  if (!host || !host.includes('.')) return true; // blocks 'localhost', 'extensions', 'newtab', etc.
+  if (
+    host === '127.0.0.1' ||
+    host === '0.0.0.0' ||
+    host.endsWith('.localhost') ||
+    host.endsWith('.local') ||
+    host.includes('tool-scribes') ||
+    host.includes('toolscribes')
+  ) {
+    return true;
+  }
+  return false;
+}
+
+// Check if any tool with the same normalized domain already exists in Supabase public.tools
+async function findExistingToolByDomain(url) {
+  const domain = normalizeToolDomain(url);
+  if (!domain) return null;
+
+  try {
+    const res = await fetch(
+      `${currentConfig.supabaseUrl}/rest/v1/tools?url=ilike.*${encodeURIComponent(domain)}*&select=id,name,url,created_at&order=created_at.asc`,
+      {
+        headers: {
+          'apikey': currentConfig.anonKey,
+          'Authorization': `Bearer ${currentConfig.anonKey}`
+        }
+      }
+    );
+    if (!res.ok) return null;
+    const rows = await res.json();
+    if (!Array.isArray(rows)) return null;
+
+    for (const row of rows) {
+      if (!row || !row.id || KNOWN_JUNK_UUIDS.has(row.id)) continue;
+      if (normalizeToolDomain(row.url) === domain) {
+        return row;
+      }
+    }
+  } catch (e) {
+    console.debug('findExistingToolByDomain failed:', e);
+  }
+  return null;
+}
+
+// Purge invalid/blocked/duplicate items from chrome.storage.local
+async function purgeInvalidClipsFromStorage() {
+  return new Promise(resolve => {
+    chrome.storage.local.get(['cachedVaultDomains', 'ts_clipped_tools'], (res) => {
+      const rawDomains = Array.isArray(res.cachedVaultDomains) ? res.cachedVaultDomains : [];
+      const rawClips = Array.isArray(res.ts_clipped_tools) ? res.ts_clipped_tools : [];
+
+      const cleanDomains = [...new Set(
+        rawDomains
+          .filter(d => typeof d === 'string' && !isBlockedToolUrl(`https://${d}`))
+          .map(d => normalizeToolDomain(`https://${d}`))
+          .filter(Boolean)
+      )];
+
+      const seenClipDomains = new Set();
+      const cleanClips = [];
+      for (const c of rawClips) {
+        if (!c || !c.url || isBlockedToolUrl(c.url)) continue;
+        if (c.id && KNOWN_JUNK_UUIDS.has(c.id)) continue;
+        const dom = normalizeToolDomain(c.url);
+        if (!dom || seenClipDomains.has(dom)) continue;
+        seenClipDomains.add(dom);
+        cleanClips.push(c);
+      }
+
+      chrome.storage.local.set({
+        cachedVaultDomains: cleanDomains,
+        ts_clipped_tools: cleanClips
+      }, () => resolve(cleanClips));
+    });
+  });
+}
+
+// Delete known junk/duplicate rows & any duplicate domains owned by the user in Supabase
+async function cleanupDatabaseDuplicates(session) {
+  if (!session?.access_token || !session?.user_id) return;
+
+  const headers = {
+    'apikey': currentConfig.anonKey,
+    'Authorization': `Bearer ${session.access_token}`,
+    'Content-Type': 'application/json'
+  };
+
+  try {
+    // 1. Fetch all tools ordered oldest-first so the original entry for each domain is preserved
+    const allRes = await fetch(
+      `${currentConfig.supabaseUrl}/rest/v1/tools?select=id,name,url,added_by,created_at&order=created_at.asc`,
+      { headers }
+    );
+
+    const idsToDelete = new Set(KNOWN_JUNK_UUIDS);
+    const canonicalByDomain = new Map();
+
+    if (allRes.ok) {
+      const allTools = await allRes.json();
+      if (Array.isArray(allTools)) {
+        for (const row of allTools) {
+          if (!row?.id) continue;
+          if (KNOWN_JUNK_UUIDS.has(row.id) || isBlockedToolUrl(row.url)) {
+            idsToDelete.add(row.id);
+            continue;
+          }
+          const dom = normalizeToolDomain(row.url);
+          if (!dom) {
+            idsToDelete.add(row.id);
+            continue;
+          }
+          if (canonicalByDomain.has(dom)) {
+            // Newer duplicate of an existing domain!
+            idsToDelete.add(row.id);
+          } else {
+            canonicalByDomain.set(dom, row);
+          }
+        }
+      }
+    }
+
+    // Ensure Free Code Camp canonical row is in the user's vault if they clipped the Python subpage
+    const freeCodeCampCanon = canonicalByDomain.get('freecodecamp.org');
+    if (freeCodeCampCanon?.id) {
+      await fetch(`${currentConfig.supabaseUrl}/rest/v1/vault_items?on_conflict=user_id,tool_id`, {
+        method: 'POST',
+        headers: { ...headers, 'Prefer': 'resolution=merge-duplicates' },
+        body: JSON.stringify({
+          user_id: session.user_id,
+          tool_id: freeCodeCampCanon.id,
+          is_favorite: false
+        })
+      }).catch(() => {});
+    }
+
+    if (idsToDelete.size > 0) {
+      const idList = Array.from(idsToDelete).join(',');
+      await fetch(`${currentConfig.supabaseUrl}/rest/v1/vault_items?tool_id=in.(${idList})`, {
+        method: 'DELETE',
+        headers
+      }).catch(() => {});
+
+      await fetch(`${currentConfig.supabaseUrl}/rest/v1/tools?id=in.(${idList})`, {
+        method: 'DELETE',
+        headers
+      }).catch(() => {});
+    }
+  } catch (e) {
+    console.debug('cleanupDatabaseDuplicates skipped:', e);
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   await loadConfig();
-  await backfillDomainClips();
+  const cleanClips = await purgeInvalidClipsFromStorage();
   await inspectActiveTab();
   setupEventListeners();
   const session = await ensureValidSession();
   updateAuthUI(session);
   if (session) {
+    await cleanupDatabaseDuplicates(session);
     await loadUserCollections(session);
-    await syncAllPendingClipsToDatabase(session);
+    await broadcastClipsToWebApp(cleanClips, false);
   }
 });
 
@@ -132,7 +321,6 @@ async function refreshSessionToken(session) {
 
 // Verify or obtain a valid authenticated Supabase session
 async function ensureValidSession() {
-  // Always try scanning open tabs first so we pick up the latest login immediately
   let session = await discoverSessionFromOpenTabs();
 
   if (!session) {
@@ -150,7 +338,6 @@ async function ensureValidSession() {
     if (refreshed) session = refreshed;
   }
 
-  // Verify token against Supabase /auth/v1/user
   try {
     const userRes = await fetch(`${currentConfig.supabaseUrl}/auth/v1/user`, {
       headers: {
@@ -192,205 +379,15 @@ function updateAuthUI(session) {
   }
 }
 
-// Recover any domains saved in cachedVaultDomains before full clip storage existed
-async function backfillDomainClips() {
-  return new Promise(resolve => {
-    chrome.storage.local.get(['cachedVaultDomains', 'ts_clipped_tools'], (res) => {
-      const domains = Array.isArray(res.cachedVaultDomains) ? res.cachedVaultDomains : [];
-      const clips = Array.isArray(res.ts_clipped_tools) ? res.ts_clipped_tools : [];
-      let changed = false;
-
-      for (const rawDomain of domains) {
-        if (!rawDomain || typeof rawDomain !== 'string') continue;
-        const clean = rawDomain.replace(/^www\./i, '').toLowerCase();
-        const exists = clips.some(c => {
-          try {
-            return new URL(c.url).hostname.replace(/^www\./i, '').toLowerCase() === clean;
-          } catch {
-            return false;
-          }
-        });
-
-        if (!exists) {
-          const baseName = clean.split('.')[0] || clean;
-          const prettyName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
-          clips.unshift({
-            id: `ext-${clean}`,
-            name: prettyName,
-            url: `https://${rawDomain}`,
-            description: `${prettyName} — saved to your personal Vault via the ToolScribe Browser Extension.`,
-            category: 'util',
-            icon: '🔧',
-            favicon: `https://www.google.com/s2/favicons?domain=${clean}&sz=64`,
-            price_model: 'free',
-            is_open_source: false,
-            is_free: true,
-            notes: '',
-            tags: ['extension-clip'],
-            created_at: new Date().toISOString(),
-            syncedToCloud: false
-          });
-          changed = true;
-        }
-      }
-
-      if (changed) {
-        chrome.storage.local.set({ ts_clipped_tools: clips }, resolve);
-      } else {
-        resolve();
-      }
-    });
-  });
-}
-
-// Upsert a single clip entry into public.tools and public.vault_items in Supabase
-async function upsertClipToSupabase(clipEntry, session) {
-  if (!session?.access_token || !session?.user_id) {
-    throw new Error('Not signed in to Supabase');
-  }
-
-  const headers = {
-    'apikey': currentConfig.anonKey,
-    'Authorization': `Bearer ${session.access_token}`,
-    'Content-Type': 'application/json'
-  };
-
-  let toolId = null;
-
-  // 1. Check if a tool with this exact URL already exists in public.tools
-  const existingRes = await fetch(
-    `${currentConfig.supabaseUrl}/rest/v1/tools?url=eq.${encodeURIComponent(clipEntry.url)}&select=id,name,url&limit=1`,
-    { headers }
-  );
-  if (existingRes.ok) {
-    const existingRows = await existingRes.json();
-    if (Array.isArray(existingRows) && existingRows.length > 0) {
-      toolId = existingRows[0].id;
-    }
-  }
-
-  // 2. If not found, insert into public.tools
-  if (!toolId) {
-    const dbPayload = {
-      name: clipEntry.name,
-      url: clipEntry.url,
-      description: clipEntry.description || `${clipEntry.name} — clipped via ToolScribe Extension.`,
-      category: ['ai', 'dev', 'design', 'prod', 'learn', 'util'].includes(clipEntry.category) ? clipEntry.category : 'util',
-      icon: clipEntry.icon || '🔧',
-      favicon: clipEntry.favicon || '',
-      og_image: '',
-      screenshot_url: '',
-      price_model: ['free', 'freemium', 'paid'].includes(clipEntry.price_model) ? clipEntry.price_model : 'free',
-      is_open_source: !!clipEntry.is_open_source,
-      requires_login: false,
-      is_free: clipEntry.is_free !== false,
-      platforms: ['web'],
-      signup_required: false,
-      added_by: session.user_id
-    };
-
-    const toolRes = await fetch(`${currentConfig.supabaseUrl}/rest/v1/tools`, {
-      method: 'POST',
-      headers: {
-        ...headers,
-        'Prefer': 'return=representation'
-      },
-      body: JSON.stringify(dbPayload)
-    });
-
-    if (!toolRes.ok) {
-      const errText = await toolRes.text();
-      throw new Error(`tools insert failed (${toolRes.status}): ${errText}`);
-    }
-
-    const insertedRows = await toolRes.json();
-    const toolRow = Array.isArray(insertedRows) ? insertedRows[0] : insertedRows;
-    if (!toolRow || !toolRow.id) {
-      throw new Error('tools insert returned no row id');
-    }
-    toolId = toolRow.id;
-  }
-
-  // 3. Upsert into public.vault_items (with explicit on_conflict=user_id,tool_id)
-  const vaultRes = await fetch(
-    `${currentConfig.supabaseUrl}/rest/v1/vault_items?on_conflict=user_id,tool_id`,
-    {
-      method: 'POST',
-      headers: {
-        ...headers,
-        'Prefer': 'resolution=merge-duplicates,return=representation'
-      },
-      body: JSON.stringify({
-        user_id: session.user_id,
-        tool_id: toolId,
-        is_favorite: false,
-        notes: clipEntry.notes || '',
-        tags: Array.isArray(clipEntry.tags) ? clipEntry.tags : []
-      })
-    }
-  );
-
-  if (!vaultRes.ok) {
-    const errText = await vaultRes.text();
-    throw new Error(`vault_items upsert failed (${vaultRes.status}): ${errText}`);
-  }
-
-  // 4. Optional collection_tools insert
-  if (clipEntry.collection_id && clipEntry.collection_id !== 'vault') {
-    await fetch(
-      `${currentConfig.supabaseUrl}/rest/v1/collection_tools?on_conflict=collection_id,tool_id`,
-      {
-        method: 'POST',
-        headers: {
-          ...headers,
-          'Prefer': 'resolution=merge-duplicates'
-        },
-        body: JSON.stringify({
-          collection_id: clipEntry.collection_id,
-          tool_id: toolId
-        })
-      }
-    ).catch(() => {});
-  }
-
-  return toolId;
-}
-
-// Automatically sync any previously clipped items (e.g. Instagram, Oracle) that haven't been saved to Supabase yet
-async function syncAllPendingClipsToDatabase(session) {
-  if (!session?.access_token || !session?.user_id) return 0;
-
-  const storageData = await new Promise(r => chrome.storage.local.get(['ts_clipped_tools'], r));
-  const clips = Array.isArray(storageData.ts_clipped_tools) ? storageData.ts_clipped_tools : [];
-  const pending = clips.filter(c => !c.syncedToCloud);
-  if (pending.length === 0) return 0;
-
-  let syncedCount = 0;
-  for (const clip of pending) {
-    try {
-      const cloudId = await upsertClipToSupabase(clip, session);
-      if (cloudId) {
-        clip.id = cloudId;
-        clip.syncedToCloud = true;
-        syncedCount++;
-      }
-    } catch (e) {
-      console.warn('[ToolScribe Popup] Pending clip sync failed for', clip.name, e);
-    }
-  }
-
-  if (syncedCount > 0) {
-    await new Promise(r => chrome.storage.local.set({ ts_clipped_tools: clips }, r));
-    await broadcastClipsToWebApp(clips, true);
-  }
-  return syncedCount;
-}
-
-// Inspect active tab DOM
+// Inspect active tab DOM and immediately check for blocked URLs or existing DB tools
 async function inspectActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab) return;
   currentTab = tab;
+
+  const saveBtn = document.getElementById('btn-save-tool');
+  const banner = document.getElementById('result-banner');
+  const resultText = document.getElementById('result-text');
 
   document.getElementById('page-url').textContent = tab.url || 'No active URL';
   document.getElementById('tool-name').value = cleanTitle(tab.title || '');
@@ -398,29 +395,30 @@ async function inspectActiveTab() {
   const faviconEl = document.getElementById('page-favicon');
   faviconEl.onerror = () => { faviconEl.style.display = 'none'; };
 
-  const isInternalUrl = !tab.url ||
-    tab.url.startsWith('chrome://') ||
-    tab.url.startsWith('chrome-extension://') ||
-    tab.url.startsWith('edge://') ||
-    tab.url.startsWith('about:') ||
-    tab.url.startsWith('brave://');
+  // 1. Check if URL is internal, localhost, or ToolScribe itself
+  if (isBlockedToolUrl(tab.url)) {
+    activeTabBlockedReason = 'Localhost, browser pages, and ToolScribe itself cannot be added as tools.';
+    faviconEl.style.display = 'none';
+    saveBtn.disabled = true;
+    saveBtn.textContent = '🚫 Cannot Save Internal / ToolScribe Site';
+    banner.classList.remove('hidden');
+    resultText.textContent = activeTabBlockedReason;
+    return;
+  }
 
-  if (!isInternalUrl && tab.favIconUrl && !tab.favIconUrl.startsWith('chrome://')) {
+  const host = normalizeToolDomain(tab.url);
+  if (tab.favIconUrl && !tab.favIconUrl.startsWith('chrome://')) {
     faviconEl.src = tab.favIconUrl;
     faviconEl.style.display = 'block';
-  } else if (!isInternalUrl && tab.url && tab.url.startsWith('http')) {
-    try {
-      const host = new URL(tab.url).hostname;
-      faviconEl.src = `https://www.google.com/s2/favicons?domain=${host}&sz=64`;
-      faviconEl.style.display = 'block';
-    } catch {
-      faviconEl.style.display = 'none';
-    }
+  } else if (host) {
+    faviconEl.src = `https://www.google.com/s2/favicons?domain=${host}&sz=64`;
+    faviconEl.style.display = 'block';
   } else {
     faviconEl.style.display = 'none';
   }
 
-  if (tab.id && tab.url && !isInternalUrl) {
+  // 2. Extract page metadata
+  if (tab.id && tab.url) {
     try {
       const results = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
@@ -441,6 +439,16 @@ async function inspectActiveTab() {
     } catch (e) {
       console.debug('Could not execute content script on tab:', e);
     }
+  }
+
+  // 3. Check if a tool with this domain is ALREADY in the Supabase database
+  const existingTool = await findExistingToolByDomain(tab.url);
+  if (existingTool) {
+    activeTabExistingTool = existingTool;
+    saveBtn.disabled = true;
+    saveBtn.textContent = `✓ Already in Database (${existingTool.name})`;
+    banner.classList.remove('hidden');
+    resultText.textContent = `"${existingTool.name}" (${host}) is already in the ToolScribe database. Duplicate tools are not allowed.`;
   }
 }
 
@@ -533,6 +541,7 @@ async function openWebAppVault(e) {
     const existingTab = tabs.find(t =>
       t.url && (
         t.url.includes('tool-scribes.vercel.app') ||
+        t.url.includes('tool-scribes-beta.vercel.app') ||
         t.url.includes('localhost:8080') ||
         t.url.includes('localhost:5173') ||
         t.url.includes('127.0.0.1:8080')
@@ -596,20 +605,14 @@ async function handleInlineLogin() {
 
     await new Promise(r => chrome.storage.local.set({ ts_auth_session: session }, r));
     updateAuthUI(session);
+    await cleanupDatabaseDuplicates(session);
     await loadUserCollections(session);
-    const count = await syncAllPendingClipsToDatabase(session);
-    if (count > 0) {
-      const banner = document.getElementById('result-banner');
-      const resultText = document.getElementById('result-text');
-      banner.classList.remove('hidden');
-      resultText.textContent = `Signed in & synced ${count} pending clip(s) to DB!`;
-    }
   } catch (err) {
     errEl.textContent = err.message || 'Sign in failed';
     errEl.classList.remove('hidden');
   } finally {
     loginBtn.disabled = false;
-    loginBtn.textContent = 'Sign In & Sync Pending Clips';
+    loginBtn.textContent = 'Sign In';
   }
 }
 
@@ -650,11 +653,27 @@ function setupEventListeners() {
   document.getElementById('result-link').addEventListener('click', openWebAppVault);
 }
 
-// Save tool to Vault (Direct Supabase DB Insert + Local Cache)
+// Save tool to Vault (Strict Domain Deduplication + Direct Supabase Insert)
 async function handleSaveTool() {
+  if (isSavingInFlight) return;
+
   const saveBtn = document.getElementById('btn-save-tool');
   const banner = document.getElementById('result-banner');
   const resultText = document.getElementById('result-text');
+
+  if (!currentTab?.url || isBlockedToolUrl(currentTab.url)) {
+    banner.classList.remove('hidden');
+    resultText.textContent = activeTabBlockedReason || 'Cannot save internal or ToolScribe URLs.';
+    saveBtn.disabled = true;
+    return;
+  }
+
+  if (activeTabExistingTool) {
+    banner.classList.remove('hidden');
+    resultText.textContent = `"${activeTabExistingTool.name}" is already in the ToolScribe database.`;
+    saveBtn.disabled = true;
+    return;
+  }
 
   const name = document.getElementById('tool-name').value.trim();
   const rawDesc = document.getElementById('tool-desc').value.trim();
@@ -664,86 +683,178 @@ async function handleSaveTool() {
   const gotcha = document.getElementById('tool-gotcha').value.trim();
   const collectionId = document.getElementById('tool-collection').value;
 
-  if (!name || !currentTab?.url) {
+  if (!name) {
     alert('Please provide a tool name.');
     return;
   }
 
+  isSavingInFlight = true;
   saveBtn.disabled = true;
-  saveBtn.textContent = 'Saving to Database...';
-
-  const validCategories = ['ai', 'dev', 'design', 'prod', 'learn', 'util'];
-  const category = validCategories.includes(rawCategory) ? rawCategory : 'util';
-
-  const priceModelMap = {
-    free: 'free',
-    freemium: 'freemium',
-    open_source: 'free',
-    paid: 'paid'
-  };
-  const priceModel = priceModelMap[rawPricing] || 'free';
-  const isOpenSource = rawPricing === 'open_source';
-  const isFree = priceModel !== 'paid';
-  const tags = tagsStr ? tagsStr.split(',').map(s => s.trim()).filter(Boolean) : [];
-
-  let domain = '';
-  try { domain = new URL(currentTab.url).hostname.replace(/^www\./i, ''); } catch {}
-
-  const favicon = (currentTab.favIconUrl && !currentTab.favIconUrl.startsWith('chrome://'))
-    ? currentTab.favIconUrl
-    : (domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=64` : '');
-
-  const description = rawDesc || `${name} — clipped via ToolScribe Extension${domain ? ` (${domain})` : ''}.`;
-  const icon = CATEGORY_ICONS[category] || '🔧';
-
-  const clipEntry = {
-    id: `ext-${domain || Date.now()}`,
-    name,
-    url: currentTab.url,
-    description,
-    category,
-    icon,
-    favicon,
-    price_model: priceModel,
-    is_open_source: isOpenSource,
-    is_free: isFree,
-    notes: gotcha || '',
-    tags,
-    collection_id: collectionId !== 'vault' ? collectionId : null,
-    created_at: new Date().toISOString(),
-    syncedToCloud: false
-  };
+  saveBtn.textContent = 'Checking Database...';
 
   try {
-    const storageData = await new Promise(resolve => {
-      chrome.storage.local.get(['ts_clipped_tools', 'cachedVaultDomains'], resolve);
-    });
+    const domain = normalizeToolDomain(currentTab.url);
+
+    // 1. Strict pre-insert duplicate check by domain against Supabase
+    const existingTool = await findExistingToolByDomain(currentTab.url);
+    if (existingTool) {
+      activeTabExistingTool = existingTool;
+      banner.classList.remove('hidden');
+      resultText.textContent = `"${existingTool.name}" (${domain}) is already in the database. Duplicates are not allowed.`;
+      saveBtn.textContent = `✓ Already in Database (${existingTool.name})`;
+      return;
+    }
 
     const session = await ensureValidSession();
     updateAuthUI(session);
 
-    let dbErrorMsg = null;
-    if (session && session.access_token && session.user_id) {
-      try {
-        const cloudToolId = await upsertClipToSupabase(clipEntry, session);
-        clipEntry.id = cloudToolId;
-        clipEntry.syncedToCloud = true;
-      } catch (dbErr) {
-        console.error('[ToolScribe Popup] Supabase insert error:', dbErr);
-        dbErrorMsg = dbErr.message;
-      }
+    if (!session || !session.access_token || !session.user_id) {
+      banner.classList.remove('hidden');
+      resultText.textContent = 'Please sign in above (or open ToolScribe web app) to save tools to the database.';
+      saveBtn.textContent = 'Sign In Above to Save';
+      document.getElementById('auth-panel').classList.remove('hidden');
+      saveBtn.disabled = false;
+      return;
     }
 
-    // Always store in ts_clipped_tools & cachedVaultDomains
-    const existingClips = Array.isArray(storageData.ts_clipped_tools) ? storageData.ts_clipped_tools : [];
-    const filteredClips = existingClips.filter(c => {
-      if (c.url === clipEntry.url) return false;
-      try {
-        return new URL(c.url).hostname.replace(/^www\./i, '') !== domain;
-      } catch {
-        return true;
-      }
+    saveBtn.textContent = 'Saving to Database...';
+
+    const validCategories = ['ai', 'dev', 'design', 'prod', 'learn', 'util'];
+    const category = validCategories.includes(rawCategory) ? rawCategory : 'util';
+
+    const priceModelMap = {
+      free: 'free',
+      freemium: 'freemium',
+      open_source: 'free',
+      paid: 'paid'
+    };
+    const priceModel = priceModelMap[rawPricing] || 'free';
+    const isOpenSource = rawPricing === 'open_source';
+    const isFree = priceModel !== 'paid';
+    const tags = tagsStr ? tagsStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+    const favicon = (currentTab.favIconUrl && !currentTab.favIconUrl.startsWith('chrome://'))
+      ? currentTab.favIconUrl
+      : (domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=64` : '');
+
+    const description = rawDesc || `${name} — clipped via ToolScribe Extension (${domain}).`;
+    const icon = CATEGORY_ICONS[category] || '🔧';
+
+    // Store clean canonical origin URL (e.g. https://mylearn.oracle.com)
+    let canonicalUrl = currentTab.url;
+    try {
+      canonicalUrl = new URL(currentTab.url).origin;
+    } catch {}
+
+    const headers = {
+      'apikey': currentConfig.anonKey,
+      'Authorization': `Bearer ${session.access_token}`,
+      'Content-Type': 'application/json'
+    };
+
+    const dbPayload = {
+      name,
+      url: canonicalUrl,
+      description,
+      category,
+      icon,
+      favicon,
+      og_image: '',
+      screenshot_url: '',
+      price_model: priceModel,
+      is_open_source: isOpenSource,
+      requires_login: false,
+      is_free: isFree,
+      platforms: ['web'],
+      signup_required: false,
+      added_by: session.user_id
+    };
+
+    const toolRes = await fetch(`${currentConfig.supabaseUrl}/rest/v1/tools`, {
+      method: 'POST',
+      headers: {
+        ...headers,
+        'Prefer': 'return=representation'
+      },
+      body: JSON.stringify(dbPayload)
     });
+
+    if (!toolRes.ok) {
+      const errText = await toolRes.text();
+      throw new Error(`tools insert failed (${toolRes.status}): ${errText}`);
+    }
+
+    const insertedRows = await toolRes.json();
+    const toolRow = Array.isArray(insertedRows) ? insertedRows[0] : insertedRows;
+    if (!toolRow || !toolRow.id) {
+      throw new Error('tools insert returned no row id');
+    }
+
+    // Upsert into public.vault_items
+    const vaultRes = await fetch(
+      `${currentConfig.supabaseUrl}/rest/v1/vault_items?on_conflict=user_id,tool_id`,
+      {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Prefer': 'resolution=merge-duplicates,return=representation'
+        },
+        body: JSON.stringify({
+          user_id: session.user_id,
+          tool_id: toolRow.id,
+          is_favorite: false,
+          notes: gotcha || '',
+          tags
+        })
+      }
+    );
+
+    if (!vaultRes.ok) {
+      const errText = await vaultRes.text();
+      throw new Error(`vault_items upsert failed (${vaultRes.status}): ${errText}`);
+    }
+
+    if (collectionId && collectionId !== 'vault') {
+      await fetch(
+        `${currentConfig.supabaseUrl}/rest/v1/collection_tools?on_conflict=collection_id,tool_id`,
+        {
+          method: 'POST',
+          headers: {
+            ...headers,
+            'Prefer': 'resolution=merge-duplicates'
+          },
+          body: JSON.stringify({
+            collection_id: collectionId,
+            tool_id: toolRow.id
+          })
+        }
+      ).catch(() => {});
+    }
+
+    const clipEntry = {
+      id: toolRow.id,
+      name,
+      url: canonicalUrl,
+      description,
+      category,
+      icon,
+      favicon,
+      price_model: priceModel,
+      is_open_source: isOpenSource,
+      is_free: isFree,
+      notes: gotcha || '',
+      tags,
+      collection_id: collectionId !== 'vault' ? collectionId : null,
+      created_at: toolRow.created_at || new Date().toISOString(),
+      syncedToCloud: true
+    };
+
+    const storageData = await new Promise(resolve => {
+      chrome.storage.local.get(['ts_clipped_tools', 'cachedVaultDomains'], resolve);
+    });
+
+    const existingClips = Array.isArray(storageData.ts_clipped_tools) ? storageData.ts_clipped_tools : [];
+    const filteredClips = existingClips.filter(c => normalizeToolDomain(c.url) !== domain);
     const updatedClips = [clipEntry, ...filteredClips];
 
     const domains = Array.isArray(storageData.cachedVaultDomains) ? storageData.cachedVaultDomains : [];
@@ -758,30 +869,21 @@ async function handleSaveTool() {
       }, resolve);
     });
 
-    // Broadcast and reload open ToolScribe tabs if synced to DB
-    await broadcastClipsToWebApp(updatedClips, clipEntry.syncedToCloud);
+    activeTabExistingTool = toolRow;
+    await broadcastClipsToWebApp(updatedClips, true);
 
     banner.classList.remove('hidden');
-    if (clipEntry.syncedToCloud) {
-      resultText.textContent = `✓ Saved "${name}" to Supabase Database & Vault!`;
-      saveBtn.textContent = '✓ Saved to Supabase DB';
-      saveBtn.style.backgroundColor = 'var(--ts-success)';
-    } else if (!session) {
-      resultText.textContent = `Queued locally — sign in above to write to Supabase DB!`;
-      saveBtn.textContent = 'Sign In Above to Sync DB';
-      document.getElementById('auth-panel').classList.remove('hidden');
-    } else {
-      resultText.textContent = `DB Error: ${dbErrorMsg || 'Could not insert'}`;
-      saveBtn.textContent = 'Retry Save';
-    }
+    resultText.textContent = `✓ Saved "${name}" to Supabase Database & Vault!`;
+    saveBtn.textContent = `✓ Already in Database (${name})`;
+    saveBtn.style.backgroundColor = 'var(--ts-success)';
+    saveBtn.disabled = true;
   } catch (err) {
     console.error('Error saving tool:', err);
     banner.classList.remove('hidden');
     resultText.textContent = `Error: ${err.message}`;
     saveBtn.textContent = 'Retry Save';
+    saveBtn.disabled = false;
   } finally {
-    setTimeout(() => {
-      saveBtn.disabled = false;
-    }, 1200);
+    isSavingInFlight = false;
   }
 }

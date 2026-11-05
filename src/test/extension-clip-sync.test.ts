@@ -3,12 +3,42 @@ import {
   stringToDeterministicUuid,
   readExtensionClips,
   mergeWithExtensionClips,
+  isBlockedToolUrl,
+  normalizeToolDomain,
 } from '@/hooks/useTools';
 import { Tool } from '@/lib/types';
 
 describe('Browser Extension Clip Sync Engine', () => {
   beforeEach(() => {
     window.localStorage.clear();
+  });
+
+  it('blocks internal, localhost, and ToolScribe self domains', () => {
+    expect(isBlockedToolUrl('https://localhost')).toBe(true);
+    expect(isBlockedToolUrl('http://localhost:8080/')).toBe(true);
+    expect(isBlockedToolUrl('https://extensions')).toBe(true);
+    expect(isBlockedToolUrl('chrome://extensions')).toBe(true);
+    expect(isBlockedToolUrl('https://tool-scribes-beta.vercel.app')).toBe(true);
+    expect(isBlockedToolUrl('https://tool-scribes.vercel.app')).toBe(true);
+
+    expect(isBlockedToolUrl('https://mylearn.oracle.com')).toBe(false);
+    expect(isBlockedToolUrl('https://www.freecodecamp.org/learn/python-v9/')).toBe(false);
+    expect(normalizeToolDomain('https://www.freecodecamp.org/learn/python-v9/')).toBe('freecodecamp.org');
+  });
+
+  it('purges blocked domains and duplicate domains when reading extension clips', () => {
+    const rawClips = [
+      { id: '625c0544-9a1d-4e11-b502-e141fb5de15e', name: 'Extensions', url: 'https://extensions' },
+      { id: 'c631023c-889c-4eba-bf2b-4cd70c55828e', name: 'Tool-scribes-beta', url: 'https://tool-scribes-beta.vercel.app' },
+      { id: 'dd1025f4-2461-459a-baa4-9fe8494404f1', name: 'Localhost', url: 'https://localhost' },
+      { id: 'f174e5dc-fb6f-40cb-ae44-196728ebe411', name: 'Oracle MyLearn', url: 'https://mylearn.oracle.com/ou/home' },
+      { id: 'cae4992f-18b9-4508-86bf-07f72d0e1e0a', name: 'Oracle MyLearn', url: 'https://mylearn.oracle.com/ou/home' },
+    ];
+    window.localStorage.setItem('ts_extension_clips', JSON.stringify(rawClips));
+
+    const clips = readExtensionClips();
+    expect(clips).toHaveLength(1);
+    expect(clips[0].name).toBe('Oracle MyLearn');
   });
 
   it('generates a valid RFC-4122 UUID from a URL or domain string', () => {

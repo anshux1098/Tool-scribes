@@ -66,6 +66,49 @@ interface ExtensionClipRaw {
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Known accidental extension-backfilled / duplicate rows to purge from DB & UI
+const KNOWN_JUNK_AND_DUPLICATE_UUIDS = new Set<string>([
+  '625c0544-9a1d-4e11-b502-e141fb5de15e', // Extensions (https://extensions)
+  'c631023c-889c-4eba-bf2b-4cd70c55828e', // Tool-scribes-beta (https://tool-scribes-beta.vercel.app)
+  'c01cb956-4193-4599-9317-35287739ffed', // Duplicate Python Certification | freeCodeCamp.org (canonical: c07ca32b-df5f-4afb-9964-9a9c64846b03)
+  'cae4992f-18b9-4508-86bf-07f72d0e1e0a', // Duplicate Oracle MyLearn (canonical: f174e5dc-fb6f-40cb-ae44-196728ebe411)
+  'dd1025f4-2461-459a-baa4-9fe8494404f1', // Localhost #1
+  '7bf33712-9d2e-470c-8e4b-d813cb86656d', // Localhost #2
+]);
+
+export function normalizeToolDomain(url: string): string {
+  if (!url) return '';
+  try {
+    return new URL(url).hostname.replace(/^www\./i, '').toLowerCase();
+  } catch {
+    return url.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0].toLowerCase();
+  }
+}
+
+export function isBlockedToolUrl(url: string): boolean {
+  if (!url || typeof url !== 'string') return true;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return true;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return true;
+  const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+  if (!host || !host.includes('.')) return true; // blocks 'localhost', 'extensions', 'newtab', etc.
+  if (
+    host === '127.0.0.1' ||
+    host === '0.0.0.0' ||
+    host.endsWith('.localhost') ||
+    host.endsWith('.local') ||
+    host.includes('tool-scribes') ||
+    host.includes('toolscribes')
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function stringToDeterministicUuid(input: string): string {
   let h1 = 0xdeadbeef ^ input.length;
   let h2 = 0x41c6ce57 ^ input.length;
@@ -96,43 +139,68 @@ export function readExtensionClips(): (Tool & { _uuid: string; _extSynced?: bool
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     const validCategories = ['ai', 'dev', 'design', 'prod', 'learn', 'util'];
+    const seenDomains = new Set<string>();
+    const cleanedRaw: ExtensionClipRaw[] = [];
+    let hadInvalid = false;
 
-    return parsed
-      .filter((c: ExtensionClipRaw) => c && typeof c.name === 'string' && typeof c.url === 'string')
-      .map((c: ExtensionClipRaw) => {
-        const uuid = (c.id && UUID_REGEX.test(c.id))
-          ? c.id
-          : stringToDeterministicUuid(c.url!.toLowerCase());
-        const cat = validCategories.includes(c.category || '') ? (c.category as ToolCategory) : 'util';
-        const pm = (c.price_model === 'paid' || c.price_model === 'freemium') ? c.price_model : 'free';
-        return {
-          id: hashId(uuid),
-          _uuid: uuid,
-          name: c.name!,
-          url: c.url!,
-          description: c.description || '',
-          category: cat,
-          icon: c.icon || '🔧',
-          favicon: c.favicon || '',
-          ogImage: '',
-          screenshotUrl: '',
-          upvotes: 0,
-          priceModel: pm as Tool['priceModel'],
-          isOpenSource: !!c.is_open_source,
-          requiresLogin: false,
-          isFree: c.is_free !== false,
-          platforms: ['web'],
-          signupRequired: false,
-          upvotedByMe: false,
-          savedToVault: true,
-          isFavorite: false,
-          addedAt: c.created_at ? new Date(c.created_at).getTime() : Date.now(),
-          notes: c.notes || '',
-          tags: Array.isArray(c.tags) ? c.tags : [],
-          _extSynced: !!c.syncedToCloud,
-          _fromExtension: true,
-        };
-      });
+    for (const c of parsed as ExtensionClipRaw[]) {
+      if (!c || typeof c.name !== 'string' || typeof c.url !== 'string') {
+        hadInvalid = true;
+        continue;
+      }
+      if (isBlockedToolUrl(c.url) || (c.id && KNOWN_JUNK_AND_DUPLICATE_UUIDS.has(c.id))) {
+        hadInvalid = true;
+        continue;
+      }
+      const domain = normalizeToolDomain(c.url);
+      if (!domain || seenDomains.has(domain)) {
+        hadInvalid = true;
+        continue;
+      }
+      seenDomains.add(domain);
+      cleanedRaw.push(c);
+    }
+
+    if (hadInvalid) {
+      try {
+        window.localStorage.setItem('ts_extension_clips', JSON.stringify(cleanedRaw));
+      } catch { /* ignore */ }
+    }
+
+    return cleanedRaw.map((c: ExtensionClipRaw) => {
+      const uuid = (c.id && UUID_REGEX.test(c.id))
+        ? c.id
+        : stringToDeterministicUuid(normalizeToolDomain(c.url!));
+      const cat = validCategories.includes(c.category || '') ? (c.category as ToolCategory) : 'util';
+      const pm = (c.price_model === 'paid' || c.price_model === 'freemium') ? c.price_model : 'free';
+      return {
+        id: hashId(uuid),
+        _uuid: uuid,
+        name: c.name!,
+        url: c.url!,
+        description: c.description || '',
+        category: cat,
+        icon: c.icon || '🔧',
+        favicon: c.favicon || '',
+        ogImage: '',
+        screenshotUrl: '',
+        upvotes: 0,
+        priceModel: pm as Tool['priceModel'],
+        isOpenSource: !!c.is_open_source,
+        requiresLogin: false,
+        isFree: c.is_free !== false,
+        platforms: ['web'],
+        signupRequired: false,
+        upvotedByMe: false,
+        savedToVault: true,
+        isFavorite: false,
+        addedAt: c.created_at ? new Date(c.created_at).getTime() : Date.now(),
+        notes: c.notes || '',
+        tags: Array.isArray(c.tags) ? c.tags : [],
+        _extSynced: !!c.syncedToCloud,
+        _fromExtension: true,
+      };
+    });
   } catch {
     return [];
   }
@@ -142,18 +210,14 @@ export function mergeWithExtensionClips(baseTools: (Tool & { _uuid: string })[])
   const extClips = readExtensionClips();
   if (extClips.length === 0) return baseTools;
 
-  const normalizeHost = (u: string) => {
-    try { return new URL(u).hostname.replace(/^www\./i, '').toLowerCase(); } catch { return u.toLowerCase(); }
-  };
-
   const existingIds = new Set(baseTools.map(t => t._uuid));
   const existingUrls = new Set(baseTools.map(t => t.url.toLowerCase()));
-  const existingHosts = new Set(baseTools.map(t => normalizeHost(t.url)));
+  const existingHosts = new Set(baseTools.map(t => normalizeToolDomain(t.url)));
 
-  const extByHost = new Map(extClips.map(c => [normalizeHost(c.url), c]));
+  const extByHost = new Map(extClips.map(c => [normalizeToolDomain(c.url), c]));
 
   const updatedBase = baseTools.map(t => {
-    const match = extByHost.get(normalizeHost(t.url));
+    const match = extByHost.get(normalizeToolDomain(t.url));
     if (match && !t.savedToVault) {
       return {
         ...t,
@@ -166,7 +230,7 @@ export function mergeWithExtensionClips(baseTools: (Tool & { _uuid: string })[])
   });
 
   const newFromExt = extClips.filter(
-    c => !existingIds.has(c._uuid) && !existingUrls.has(c.url.toLowerCase()) && !existingHosts.has(normalizeHost(c.url))
+    c => !existingIds.has(c._uuid) && !existingUrls.has(c.url.toLowerCase()) && !existingHosts.has(normalizeToolDomain(c.url))
   );
 
   return [...newFromExt, ...updatedBase];
@@ -306,7 +370,7 @@ export function useTools() {
       ]);
 
       if (toolsRes.error) throw toolsRes.error;
-      const toolRows = toolsRes.data ?? [];
+      const rawToolRows = (toolsRes.data ?? []) as Array<Record<string, unknown>>;
 
       const vaultMap = new Map<string, Record<string, unknown>>(
         ((vaultRes.data ?? []) as Array<Record<string, unknown>>).map(v => [v.tool_id as string, v])
@@ -314,6 +378,53 @@ export function useTools() {
       const upvotedIds = new Set<string>(
         ((upvotesRes.data ?? []) as Array<{ tool_id: string }>).map(u => u.tool_id)
       );
+
+      // Deduplicate by domain (keeping the oldest/canonical tool for each domain) and strip blocked/internal URLs
+      const idsToDeleteFromDb = new Set<string>(KNOWN_JUNK_AND_DUPLICATE_UUIDS);
+      const canonicalByDomain = new Map<string, Record<string, unknown>>();
+      // Traverse oldest-first so the original database entry (e.g. Free Code Camp) wins over newer duplicates
+      const chronologicalRows = [...rawToolRows].reverse();
+      for (const row of chronologicalRows) {
+        const rowId = row.id as string;
+        const rowUrl = (row.url as string) || '';
+        if (KNOWN_JUNK_AND_DUPLICATE_UUIDS.has(rowId) || isBlockedToolUrl(rowUrl)) {
+          idsToDeleteFromDb.add(rowId);
+          continue;
+        }
+        const domain = normalizeToolDomain(rowUrl);
+        if (!domain) {
+          idsToDeleteFromDb.add(rowId);
+          continue;
+        }
+        const existingCanonical = canonicalByDomain.get(domain);
+        if (existingCanonical) {
+          // Newer row with the exact same domain is a duplicate -> mark for cleanup
+          idsToDeleteFromDb.add(rowId);
+          // If the duplicate was saved in the user's vault, preserve vault status on the canonical tool
+          const dupVault = vaultMap.get(rowId);
+          const canonId = existingCanonical.id as string;
+          if (dupVault && !vaultMap.has(canonId)) {
+            vaultMap.set(canonId, { ...dupVault, tool_id: canonId });
+          }
+        } else {
+          canonicalByDomain.set(domain, row);
+        }
+      }
+
+      const toolRows = rawToolRows.filter(r => !idsToDeleteFromDb.has(r.id as string));
+
+      // Permanently delete junk & duplicate rows owned by the signed-in user from Supabase DB
+      if (user && idsToDeleteFromDb.size > 0) {
+        const deleteIds = Array.from(idsToDeleteFromDb);
+        (async () => {
+          try {
+            await supabase.from('vault_items').delete().eq('user_id', user.id).in('tool_id', deleteIds);
+            await supabase.from('tools').delete().eq('added_by', user.id).in('id', deleteIds);
+          } catch (cleanupErr) {
+            console.debug('[useTools] Duplicate cleanup skipped:', cleanupErr);
+          }
+        })();
+      }
 
       // Batch-fetch profiles for tool authors
       const addedByIds = [...new Set(toolRows.map(r => (r as Record<string, unknown>).added_by as string).filter(Boolean))];
@@ -334,7 +445,8 @@ export function useTools() {
       }
 
       const mapped = toolRows.map(row => {
-        const t = rowToTool(row as Record<string, unknown>, vaultMap.get(row.id) ?? null, upvotedIds);
+        const rowId = row.id as string;
+        const t = rowToTool(row as Record<string, unknown>, vaultMap.get(rowId) ?? null, upvotedIds);
         const authorId = (row as Record<string, unknown>).added_by as string | undefined;
         if (authorId && profileMap.has(authorId)) {
           const p = profileMap.get(authorId)!;
@@ -344,8 +456,8 @@ export function useTools() {
         return t;
       });
 
-      const last = toolRows[toolRows.length - 1];
-      const full = mapped.length === PAGE_SIZE && !!last;
+      const last = rawToolRows[rawToolRows.length - 1];
+      const full = rawToolRows.length === PAGE_SIZE && !!last;
       const cursorObj: ToolCursor | null = full ? {
         createdAt: last.created_at as string,
         id: last.id as string,
@@ -416,72 +528,6 @@ export function useTools() {
     };
   }, []);
 
-  // Automatically sync unsynced extension clips to Supabase when user is authenticated
-  useEffect(() => {
-    if (!user || !isSupabaseConfigured || loading) return;
-    const extClips = readExtensionClips().filter(c => !c._extSynced);
-    if (extClips.length === 0) return;
-
-    (async () => {
-      for (const clip of extClips) {
-        try {
-          const { data: toolRow, error: tErr } = await supabase
-            .from('tools')
-            .insert({
-              name: clip.name,
-              url: clip.url,
-              description: clip.description,
-              category: clip.category,
-              icon: clip.icon,
-              favicon: clip.favicon,
-              og_image: '',
-              screenshot_url: '',
-              price_model: clip.priceModel ?? 'free',
-              is_open_source: clip.isOpenSource ?? false,
-              requires_login: false,
-              is_free: clip.isFree ?? true,
-              platforms: ['web'],
-              signup_required: false,
-              added_by: user.id,
-            })
-            .select()
-            .single();
-
-          if (!tErr && toolRow) {
-            await supabase
-              .from('vault_items')
-              .upsert({
-                user_id: user.id,
-                tool_id: toolRow.id,
-                is_favorite: false,
-                notes: clip.notes ?? '',
-                tags: clip.tags ?? [],
-              }, { onConflict: 'user_id,tool_id' });
-
-            // Mark synced in localStorage & notify extension
-            try {
-              const raw = localStorage.getItem('ts_extension_clips');
-              if (raw) {
-                const parsed = JSON.parse(raw);
-                if (Array.isArray(parsed)) {
-                  const updated = parsed.map((item: ExtensionClipRaw) =>
-                    item.url === clip.url ? { ...item, id: toolRow.id, syncedToCloud: true } : item
-                  );
-                  localStorage.setItem('ts_extension_clips', JSON.stringify(updated));
-                }
-              }
-              window.dispatchEvent(new CustomEvent('ts:mark-clip-synced', {
-                detail: { url: clip.url, cloudUuid: toolRow.id }
-              }));
-            } catch { /* ignore storage errors */ }
-          }
-        } catch (err) {
-          console.debug('[useTools] background extension clip sync skipped:', err);
-        }
-      }
-    })();
-  }, [user, loading]);
-
   const fetchMore = useCallback(() => {
     if (nextCursor && !loading) {
       fetchAll(nextCursor);
@@ -519,6 +565,17 @@ export function useTools() {
 
   const addTool = useCallback(async (tool: NewTool) => {
     if (!user) return;
+    if (isBlockedToolUrl(tool.url)) {
+      console.warn('[useTools] Blocked internal/self tool URL:', tool.url);
+      return;
+    }
+    const targetDomain = normalizeToolDomain(tool.url);
+    const alreadyLoaded = toolsRef.current.find(t => normalizeToolDomain(t.url) === targetDomain);
+    if (alreadyLoaded) {
+      console.warn('[useTools] Tool domain already exists in database:', alreadyLoaded.name);
+      return;
+    }
+
     const tempId = Date.now();
     const optimistic: Tool & { _uuid: string } = {
       ...tool,
@@ -535,6 +592,20 @@ export function useTools() {
     setTools(prev => [optimistic, ...prev]);
 
     try {
+      // Double-check against Supabase tools table by domain before inserting
+      const { data: existingMatches } = await supabase
+        .from('tools')
+        .select('id, name, url')
+        .ilike('url', `%${targetDomain}%`)
+        .limit(5);
+      const exactDomainMatch = (existingMatches ?? []).find(
+        (m: Record<string, unknown>) => normalizeToolDomain((m.url as string) || '') === targetDomain
+      );
+      if (exactDomainMatch) {
+        setTools(prev => prev.filter(t => t.id !== tempId));
+        return;
+      }
+
       const { data: toolRow, error: tErr } = await supabase
         .from('tools')
         .insert({

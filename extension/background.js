@@ -4,6 +4,49 @@ const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 const DEFAULT_SUPABASE_URL = "https://qglvwvpsegrucrhcpzxd.supabase.co";
 const DEFAULT_ANON_KEY = "sb_publishable_pN6EDmb7_lIo00Gtek36zw_QFU8sb3L";
 
+// Known accidental backfilled / duplicate tool UUIDs to purge from DB & storage
+const KNOWN_JUNK_UUIDS = new Set([
+  '625c0544-9a1d-4e11-b502-e141fb5de15e', // Extensions
+  'c631023c-889c-4eba-bf2b-4cd70c55828e', // Tool-scribes-beta
+  'c01cb956-4193-4599-9317-35287739ffed', // Duplicate Python Certification | freeCodeCamp.org
+  'cae4992f-18b9-4508-86bf-07f72d0e1e0a', // Duplicate Oracle MyLearn
+  'dd1025f4-2461-459a-baa4-9fe8494404f1', // Localhost #1
+  '7bf33712-9d2e-470c-8e4b-d813cb86656d'  // Localhost #2
+]);
+
+function normalizeToolDomain(url) {
+  if (!url || typeof url !== 'string') return '';
+  try {
+    return new URL(url).hostname.replace(/^www\./i, '').toLowerCase();
+  } catch {
+    return url.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0].toLowerCase();
+  }
+}
+
+function isBlockedToolUrl(url) {
+  if (!url || typeof url !== 'string') return true;
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return true;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return true;
+  const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+  if (!host || !host.includes('.')) return true; // blocks 'localhost', 'extensions', 'newtab', etc.
+  if (
+    host === '127.0.0.1' ||
+    host === '0.0.0.0' ||
+    host.endsWith('.localhost') ||
+    host.endsWith('.local') ||
+    host.includes('tool-scribes') ||
+    host.includes('toolscribes')
+  ) {
+    return true;
+  }
+  return false;
+}
+
 // Scan open tabs for an active Supabase login session
 async function discoverSessionFromOpenTabs() {
   try {
@@ -55,94 +98,8 @@ async function discoverSessionFromOpenTabs() {
   return null;
 }
 
-// Upsert a single clip into public.tools and public.vault_items in Supabase
-async function upsertClipToSupabase(clipEntry, session, supabaseUrl, anonKey) {
-  const headers = {
-    'apikey': anonKey,
-    'Authorization': `Bearer ${session.access_token}`,
-    'Content-Type': 'application/json'
-  };
-
-  let toolId = null;
-
-  const existingRes = await fetch(
-    `${supabaseUrl}/rest/v1/tools?url=eq.${encodeURIComponent(clipEntry.url)}&select=id,name,url&limit=1`,
-    { headers }
-  );
-  if (existingRes.ok) {
-    const existingRows = await existingRes.json();
-    if (Array.isArray(existingRows) && existingRows.length > 0) {
-      toolId = existingRows[0].id;
-    }
-  }
-
-  if (!toolId) {
-    const dbPayload = {
-      name: clipEntry.name,
-      url: clipEntry.url,
-      description: clipEntry.description || `${clipEntry.name} — clipped via ToolScribe Extension.`,
-      category: ['ai', 'dev', 'design', 'prod', 'learn', 'util'].includes(clipEntry.category) ? clipEntry.category : 'util',
-      icon: clipEntry.icon || '🔧',
-      favicon: clipEntry.favicon || '',
-      og_image: '',
-      screenshot_url: '',
-      price_model: ['free', 'freemium', 'paid'].includes(clipEntry.price_model) ? clipEntry.price_model : 'free',
-      is_open_source: !!clipEntry.is_open_source,
-      requires_login: false,
-      is_free: clipEntry.is_free !== false,
-      platforms: ['web'],
-      signup_required: false,
-      added_by: session.user_id
-    };
-
-    const toolRes = await fetch(`${supabaseUrl}/rest/v1/tools`, {
-      method: 'POST',
-      headers: {
-        ...headers,
-        'Prefer': 'return=representation'
-      },
-      body: JSON.stringify(dbPayload)
-    });
-
-    if (!toolRes.ok) {
-      throw new Error(`tools insert failed (${toolRes.status})`);
-    }
-
-    const insertedRows = await toolRes.json();
-    const toolRow = Array.isArray(insertedRows) ? insertedRows[0] : insertedRows;
-    if (!toolRow || !toolRow.id) {
-      throw new Error('tools insert returned no row id');
-    }
-    toolId = toolRow.id;
-  }
-
-  const vaultRes = await fetch(
-    `${supabaseUrl}/rest/v1/vault_items?on_conflict=user_id,tool_id`,
-    {
-      method: 'POST',
-      headers: {
-        ...headers,
-        'Prefer': 'resolution=merge-duplicates,return=representation'
-      },
-      body: JSON.stringify({
-        user_id: session.user_id,
-        tool_id: toolId,
-        is_favorite: false,
-        notes: clipEntry.notes || '',
-        tags: Array.isArray(clipEntry.tags) ? clipEntry.tags : []
-      })
-    }
-  );
-
-  if (!vaultRes.ok) {
-    throw new Error(`vault_items upsert failed (${vaultRes.status})`);
-  }
-
-  return toolId;
-}
-
-// Backfill cachedVaultDomains into ts_clipped_tools AND sync all unsynced clips directly to Supabase DB
-async function backfillAndSyncToSupabase() {
+// Purge invalid/blocked/duplicate items from chrome.storage.local & clean up duplicate DB rows
+async function purgeAndCleanupDatabase() {
   try {
     const syncCfg = await new Promise(r => chrome.storage.sync.get(['supabaseUrl', 'anonKey'], r));
     const supabaseUrl = (syncCfg.supabaseUrl && syncCfg.supabaseUrl.trim()) || DEFAULT_SUPABASE_URL;
@@ -152,74 +109,92 @@ async function backfillAndSyncToSupabase() {
       chrome.storage.local.get(['cachedVaultDomains', 'ts_clipped_tools', 'ts_auth_session'], r)
     );
 
-    const domains = Array.isArray(res.cachedVaultDomains) ? res.cachedVaultDomains : [];
-    const clips = Array.isArray(res.ts_clipped_tools) ? res.ts_clipped_tools : [];
-    let changed = false;
+    const rawDomains = Array.isArray(res.cachedVaultDomains) ? res.cachedVaultDomains : [];
+    const rawClips = Array.isArray(res.ts_clipped_tools) ? res.ts_clipped_tools : [];
 
-    for (const rawDomain of domains) {
-      if (!rawDomain || typeof rawDomain !== 'string') continue;
-      const clean = rawDomain.replace(/^www\./i, '').toLowerCase();
-      const exists = clips.some(c => {
-        try {
-          return new URL(c.url).hostname.replace(/^www\./i, '').toLowerCase() === clean;
-        } catch {
-          return false;
-        }
-      });
+    const cleanDomains = [...new Set(
+      rawDomains
+        .filter(d => typeof d === 'string' && !isBlockedToolUrl(`https://${d}`))
+        .map(d => normalizeToolDomain(`https://${d}`))
+        .filter(Boolean)
+    )];
 
-      if (!exists) {
-        const baseName = clean.split('.')[0] || clean;
-        const prettyName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
-        clips.unshift({
-          id: `ext-${clean}`,
-          name: prettyName,
-          url: `https://${rawDomain}`,
-          description: `${prettyName} — saved to your personal Vault via the ToolScribe Browser Extension.`,
-          category: 'util',
-          icon: '🔧',
-          favicon: `https://www.google.com/s2/favicons?domain=${clean}&sz=64`,
-          price_model: 'free',
-          is_open_source: false,
-          is_free: true,
-          notes: '',
-          tags: ['extension-clip'],
-          created_at: new Date().toISOString(),
-          syncedToCloud: false
-        });
-        changed = true;
-      }
+    const seenClipDomains = new Set();
+    const cleanClips = [];
+    for (const c of rawClips) {
+      if (!c || !c.url || isBlockedToolUrl(c.url)) continue;
+      if (c.id && KNOWN_JUNK_UUIDS.has(c.id)) continue;
+      const dom = normalizeToolDomain(c.url);
+      if (!dom || seenClipDomains.has(dom)) continue;
+      seenClipDomains.add(dom);
+      cleanClips.push(c);
     }
 
-    // Discover session from open tabs or local storage
+    await new Promise(r =>
+      chrome.storage.local.set({
+        cachedVaultDomains: cleanDomains,
+        ts_clipped_tools: cleanClips
+      }, r)
+    );
+
     let session = await discoverSessionFromOpenTabs();
     if (!session && res.ts_auth_session?.access_token && res.ts_auth_session?.user_id) {
       session = res.ts_auth_session;
     }
 
-    let syncedToDbCount = 0;
     if (session && session.access_token && session.user_id) {
-      for (const clip of clips) {
-        if (!clip.syncedToCloud) {
-          try {
-            const toolId = await upsertClipToSupabase(clip, session, supabaseUrl, anonKey);
-            if (toolId) {
-              clip.id = toolId;
-              clip.syncedToCloud = true;
-              changed = true;
-              syncedToDbCount++;
+      const headers = {
+        'apikey': anonKey,
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json'
+      };
+
+      const allRes = await fetch(
+        `${supabaseUrl}/rest/v1/tools?select=id,name,url,added_by,created_at&order=created_at.asc`,
+        { headers }
+      );
+
+      const idsToDelete = new Set(KNOWN_JUNK_UUIDS);
+      const canonicalByDomain = new Map();
+
+      if (allRes.ok) {
+        const allTools = await allRes.json();
+        if (Array.isArray(allTools)) {
+          for (const row of allTools) {
+            if (!row?.id) continue;
+            if (KNOWN_JUNK_UUIDS.has(row.id) || isBlockedToolUrl(row.url)) {
+              idsToDelete.add(row.id);
+              continue;
             }
-          } catch (e) {
-            console.debug('[ToolScribe Background] Sync skipped for', clip.name, e);
+            const dom = normalizeToolDomain(row.url);
+            if (!dom) {
+              idsToDelete.add(row.id);
+              continue;
+            }
+            if (canonicalByDomain.has(dom)) {
+              idsToDelete.add(row.id);
+            } else {
+              canonicalByDomain.set(dom, row);
+            }
           }
         }
       }
+
+      if (idsToDelete.size > 0) {
+        const idList = Array.from(idsToDelete).join(',');
+        await fetch(`${supabaseUrl}/rest/v1/vault_items?tool_id=in.(${idList})`, {
+          method: 'DELETE',
+          headers
+        }).catch(() => {});
+
+        await fetch(`${supabaseUrl}/rest/v1/tools?id=in.(${idList})`, {
+          method: 'DELETE',
+          headers
+        }).catch(() => {});
+      }
     }
 
-    if (changed) {
-      await new Promise(r => chrome.storage.local.set({ ts_clipped_tools: clips }, r));
-    }
-
-    // Broadcast to any open ToolScribe web app tabs (and reload them if new DB rows were inserted)
+    // Broadcast cleaned clips to open ToolScribe web app tabs
     const tabs = await chrome.tabs.query({});
     for (const t of tabs) {
       if (!t.id || !t.url) continue;
@@ -229,20 +204,17 @@ async function backfillAndSyncToSupabase() {
         t.url.includes('tool-scribes') ||
         t.url.includes('toolscribes')
       ) {
-        chrome.tabs.sendMessage(t.id, { type: 'TS_CLIP_UPDATED', clips }).catch(() => {});
-        if (syncedToDbCount > 0) {
-          chrome.tabs.reload(t.id).catch(() => {});
-        }
+        chrome.tabs.sendMessage(t.id, { type: 'TS_CLIP_UPDATED', clips: cleanClips }).catch(() => {});
       }
     }
   } catch (err) {
-    console.debug('[ToolScribe Background] backfillAndSyncToSupabase error:', err);
+    console.debug('[ToolScribe Background] purgeAndCleanupDatabase error:', err);
   }
 }
 
-backfillAndSyncToSupabase();
+purgeAndCleanupDatabase();
 
-// Listen for tab updates (Passive Dust Collector Tracker + Session Discovery)
+// Listen for tab updates (Passive Dust Collector Tracker + Cleanup Trigger)
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status !== 'complete' || !tab.url) return;
 
@@ -256,27 +228,24 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     return;
   }
 
-  // If the user opened or refreshed the ToolScribe website, sync any pending clips immediately
   if (
     tab.url.includes('tool-scribes.vercel.app') ||
+    tab.url.includes('tool-scribes-beta.vercel.app') ||
     tab.url.includes('localhost:8080') ||
     tab.url.includes('localhost:5173')
   ) {
-    backfillAndSyncToSupabase();
-  }
-
-  let hostname = '';
-  try {
-    hostname = new URL(tab.url).hostname.replace(/^www\./, '');
-  } catch {
+    purgeAndCleanupDatabase();
     return;
   }
 
+  if (isBlockedToolUrl(tab.url)) return;
+
+  const hostname = normalizeToolDomain(tab.url);
   if (!hostname) return;
 
   chrome.storage.local.get(['cachedVaultDomains', `visit_${hostname}`], async (res) => {
     const domains = res.cachedVaultDomains || [];
-    const isSavedTool = domains.some(d => d.includes(hostname) || hostname.includes(d));
+    const isSavedTool = domains.some(d => d === hostname);
 
     if (!isSavedTool) return;
 
@@ -321,7 +290,7 @@ async function syncVisitToSupabase(domain) {
 try {
   if (typeof chrome !== 'undefined' && chrome?.contextMenus?.create) {
     chrome.runtime.onInstalled.addListener(() => {
-      backfillAndSyncToSupabase();
+      purgeAndCleanupDatabase();
       try {
         chrome.contextMenus.create({
           id: "toolscribe-clip-page",
