@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, MapPin, Globe, Calendar, Bookmark,
   MessageCircle, ChevronRight, Plus, Check, Github, Twitter, Linkedin,
-  Settings, Wrench, Star, Quote, Heart, Send
+  Settings, Wrench, Star, Quote, Heart, Send, Code2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { SEO } from '@/components/SEO';
@@ -14,6 +14,7 @@ import { formatDistanceToNow } from 'date-fns';
 import CuratorBadge from '@/components/CuratorBadge';
 import ReputationBadge from '@/components/ReputationBadge';
 import ProfileSettingsModal from '@/components/ProfileSettingsModal';
+import EmbedStackModal from '@/components/EmbedStackModal';
 import CuratorRecommendations from '@/components/CuratorRecommendations';
 import { notifyNewFollower } from '@/lib/notifications';
 import { hashId } from '@/lib/hashId';
@@ -135,6 +136,7 @@ export default function ProfilePage() {
   const [dataLoading, setDataLoading] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [embedOpen, setEmbedOpen] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
   const [localFollowerCount, setLocalFollowerCount] = useState(0);
@@ -515,15 +517,25 @@ export default function ProfilePage() {
           >
             <ArrowLeft size={14} /> Back
           </button>
-          {isOwnProfile && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setSettingsOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-dmsans transition-colors border"
+              onClick={() => setEmbedOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-dmsans transition-colors border hover:bg-black/5"
               style={{ color: '#5a5a5a', borderColor: '#D4CFC5' }}
+              title="Generate embeddable stack badge for GitHub or personal websites"
             >
-              <Settings size={13} /> Edit Profile
+              <Code2 size={13} /> Embed Stack
             </button>
-          )}
+            {isOwnProfile && (
+              <button
+                onClick={() => setSettingsOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-dmsans transition-colors border hover:bg-black/5"
+                style={{ color: '#5a5a5a', borderColor: '#D4CFC5' }}
+              >
+                <Settings size={13} /> Edit Profile
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1091,6 +1103,14 @@ export default function ProfilePage() {
 
       </div>
 
+      {profile && (
+        <EmbedStackModal
+          open={embedOpen}
+          onClose={() => setEmbedOpen(false)}
+          profile={profile}
+          shelfTools={shelfTools}
+        />
+      )}
       {isOwnProfile && (
         <ProfileSettingsModal
           open={settingsOpen}
