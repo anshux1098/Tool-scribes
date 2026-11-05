@@ -1,19 +1,18 @@
 import { useState, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Plus, X, ExternalLink, Check, Sparkles, Scale, Shield, Globe, Star } from 'lucide-react';
+import { ArrowLeft, Plus, X, ExternalLink, Check, Scale } from 'lucide-react';
 import { SEO } from '@/components/SEO';
 import Navbar from '@/components/Navbar';
 import { useTools } from '@/hooks/useTools';
-import { useReviews } from '@/hooks/useReviews';
 import { Tool, CATEGORY_LABELS } from '@/lib/types';
 import ToolHealthBadge from '@/components/ToolHealthBadge';
-import { fetchToolHealth } from '@/lib/health';
+import { fetchToolHealth, HealthStatus } from '@/lib/health';
 import { useEffect } from 'react';
 
 export default function ComparePage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { tools, loading } = useTools();
+  const { tools } = useTools();
 
   // Selected tool IDs from query params: ?tools=123,456
   const selectedIds = useMemo(() => {
@@ -27,7 +26,7 @@ export default function ComparePage() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectorOpen, setSelectorOpen] = useState(false);
-  const [healthMap, setHealthMap] = useState<Record<string, string>>({});
+  const [healthMap, setHealthMap] = useState<Record<string, HealthStatus>>({});
 
   useEffect(() => {
     selectedTools.forEach(t => {
@@ -240,7 +239,7 @@ export default function ComparePage() {
                       {CATEGORY_LABELS[tool.category] || tool.category}
                     </span>
                     {healthMap[tool._uuid] ? (
-                      <ToolHealthBadge status={healthMap[tool._uuid] as any} size="sm" />
+                      <ToolHealthBadge status={healthMap[tool._uuid]} size="sm" />
                     ) : (
                       <span className="text-[11px] font-mono text-tv-text-m">Checking status...</span>
                     )}
