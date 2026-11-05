@@ -18,7 +18,7 @@
         </div>
         <div class="brand-text">
           <span class="brand-title">ToolScribe</span>
-          <span class="brand-badge">Clipper</span>
+          <span id="conn-status" class="status-pill offline">Checking Auth...</span>
         </div>
       </div>
       <div class="header-actions">
@@ -31,15 +31,41 @@
       </div>
     </header>
 
+    <!-- Inline Auth Panel (Shown automatically if user is not signed in on any open tab) -->
+    <div id="auth-panel" class="settings-panel hidden">
+      <div class="settings-header">
+        <span class="settings-title">Connect Account for Database Sync</span>
+      </div>
+      <p style="font-size: 11px; color: var(--ts-text-muted); margin-bottom: 6px;">
+        Connect your logged-in ToolScribe session so clips write directly to Supabase <code>tools</code> &amp; <code>vault_items</code>.
+      </p>
+      <button id="btn-connect-webapp" class="btn btn-primary" style="padding: 7px 10px; font-size: 12px; margin-bottom: 6px;">
+        ⚡ 1-Click Connect via ToolScribe Web App
+      </button>
+      <details style="font-size: 11px; color: var(--ts-text-muted);">
+        <summary style="cursor: pointer; font-weight: 500; margin-bottom: 6px;">Or sign in with Email &amp; Password</summary>
+        <div class="field-group" style="margin-bottom: 6px;">
+          <label for="auth-email">Email</label>
+          <input type="email" id="auth-email" placeholder="you@example.com" class="input-text">
+        </div>
+        <div class="field-group" style="margin-bottom: 6px;">
+          <label for="auth-password">Password</label>
+          <input type="password" id="auth-password" placeholder="••••••••" class="input-text">
+        </div>
+        <p id="auth-error" class="hidden" style="font-size: 11px; color: var(--ts-error); margin-bottom: 4px;"></p>
+        <button id="btn-login" class="btn btn-secondary" style="padding: 6px 10px; font-size: 12px;">Sign In &amp; Sync Pending Clips</button>
+      </details>
+    </div>
+
     <!-- Settings Drawer (Hidden by default) -->
     <div id="settings-panel" class="settings-panel hidden">
       <div class="settings-header">
-        <span class="settings-title">Supabase & App Connection</span>
-        <span id="conn-status" class="status-pill online">Ready</span>
+        <span class="settings-title">Supabase &amp; App Connection</span>
+        <button id="btn-logout" class="icon-btn" style="font-size: 10px; padding: 2px 6px;">Sign Out</button>
       </div>
       <div class="field-group">
         <label for="cfg-webapp-url">ToolScribe Web App URL</label>
-        <input type="text" id="cfg-webapp-url" placeholder="http://localhost:8080" class="input-text">
+        <input type="text" id="cfg-webapp-url" placeholder="https://tool-scribes.vercel.app" class="input-text">
       </div>
       <div class="field-group">
         <label for="cfg-supabase-url">Supabase Project URL</label>
@@ -77,11 +103,11 @@
             <label for="tool-category">Category</label>
             <select id="tool-category" class="input-select">
               <option value="dev">Developer Tools</option>
-              <option value="ai">AI & ML</option>
-              <option value="design">Design & UI</option>
+              <option value="ai">AI &amp; ML</option>
+              <option value="design">Design &amp; UI</option>
               <option value="prod">Productivity</option>
               <option value="learn">Learning</option>
-              <option value="util">Utilities & Social</option>
+              <option value="util">Utilities &amp; Social</option>
             </select>
           </div>
         </div>
@@ -98,7 +124,7 @@
           </div>
           <div class="field-group flex-1">
             <label for="tool-tags">Tags</label>
-            <input type="text" id="tool-tags" class="input-text" placeholder="cli, social, web">
+            <input type="text" id="tool-tags" class="input-text" placeholder="cli, social, cloud">
           </div>
         </div>
 
