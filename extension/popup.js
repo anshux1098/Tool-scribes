@@ -43,12 +43,21 @@ async function inspectActiveTab() {
   document.getElementById('page-url').textContent = tab.url || 'No active URL';
   document.getElementById('tool-name').value = cleanTitle(tab.title || '');
 
-  // Set favicon
+  // Set favicon safely (never load chrome:// or local resources)
   const faviconEl = document.getElementById('page-favicon');
-  if (tab.favIconUrl) {
+  faviconEl.onerror = () => { faviconEl.style.display = 'none'; };
+
+  const isInternalUrl = !tab.url || 
+    tab.url.startsWith('chrome://') || 
+    tab.url.startsWith('chrome-extension://') || 
+    tab.url.startsWith('edge://') || 
+    tab.url.startsWith('about:') || 
+    tab.url.startsWith('brave://');
+
+  if (!isInternalUrl && tab.favIconUrl && !tab.favIconUrl.startsWith('chrome://')) {
     faviconEl.src = tab.favIconUrl;
     faviconEl.style.display = 'block';
-  } else {
+  } else if (!isInternalUrl && tab.url && tab.url.startsWith('http')) {
     try {
       const origin = new URL(tab.url).origin;
       faviconEl.src = `${origin}/favicon.ico`;
@@ -56,6 +65,8 @@ async function inspectActiveTab() {
     } catch {
       faviconEl.style.display = 'none';
     }
+  } else {
+    faviconEl.style.display = 'none';
   }
 
   // Execute extraction in page

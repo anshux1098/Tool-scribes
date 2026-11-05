@@ -7,7 +7,13 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status !== 'complete' || !tab.url) return;
 
   // Ignore internal/browser urls
-  if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('about:')) {
+  if (
+    tab.url.startsWith('chrome://') || 
+    tab.url.startsWith('chrome-extension://') || 
+    tab.url.startsWith('edge://') || 
+    tab.url.startsWith('about:') ||
+    tab.url.startsWith('brave://')
+  ) {
     return;
   }
 
@@ -70,25 +76,37 @@ async function syncVisitToSupabase(domain) {
   }
 }
 
-// Right click context menu integration (safely guarded)
-if (typeof chrome !== 'undefined' && chrome.contextMenus) {
-  chrome.runtime.onInstalled.addListener(() => {
-    try {
-      chrome.contextMenus.create({
-        id: "toolscribe-clip-page",
-        title: "Save page to ToolScribe Vault",
-        contexts: ["page", "link"]
-      });
-    } catch (e) {
-      console.debug('Context menu init:', e);
-    }
-  });
-
-  chrome.contextMenus.onClicked.addListener((info, tab) => {
-    if (info.menuItemId === "toolscribe-clip-page" && tab?.id) {
-      if (chrome.action && chrome.action.openPopup) {
-        chrome.action.openPopup().catch(() => {});
+// Right click context menu integration (completely safely guarded)
+try {
+  if (typeof chrome !== 'undefined' && chrome?.contextMenus?.create) {
+    chrome.runtime.onInstalled.addListener(() => {
+      try {
+        chrome.contextMenus.create({
+          id: "toolscribe-clip-page",
+          title: "Save page to ToolScribe Vault",
+          contexts: ["page", "link"]
+        }, () => {
+          if (chrome.runtime.lastError) {
+            // Ignore duplicate menu error
+          }
+        });
+      } catch (e) {
+        console.debug('Context menu init skipped:', e);
       }
+    });
+
+    if (chrome?.contextMenus?.onClicked?.addListener) {
+      chrome.contextMenus.onClicked.addListener((info, tab) => {
+        if (info.menuItemId === "toolscribe-clip-page" && tab?.id) {
+          try {
+            if (chrome.action?.openPopup) {
+              chrome.action.openPopup().catch(() => {});
+            }
+          } catch {}
+        }
+      });
     }
-  });
+  }
+} catch (e) {
+  console.debug('Context menu setup skipped:', e);
 }
