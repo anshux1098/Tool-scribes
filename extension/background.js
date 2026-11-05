@@ -70,20 +70,25 @@ async function syncVisitToSupabase(domain) {
   }
 }
 
-// Right click context menu integration
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({
-    id: "toolscribe-clip-page",
-    title: "Save page to ToolScribe Vault",
-    contexts: ["page", "link"]
+// Right click context menu integration (safely guarded)
+if (typeof chrome !== 'undefined' && chrome.contextMenus) {
+  chrome.runtime.onInstalled.addListener(() => {
+    try {
+      chrome.contextMenus.create({
+        id: "toolscribe-clip-page",
+        title: "Save page to ToolScribe Vault",
+        contexts: ["page", "link"]
+      });
+    } catch (e) {
+      console.debug('Context menu init:', e);
+    }
   });
-});
 
-chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId === "toolscribe-clip-page" && tab?.id) {
-    // Open action popup
-    chrome.action.openPopup().catch(() => {
-      console.log('Context menu triggered clipping');
-    });
-  }
-});
+  chrome.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId === "toolscribe-clip-page" && tab?.id) {
+      if (chrome.action && chrome.action.openPopup) {
+        chrome.action.openPopup().catch(() => {});
+      }
+    }
+  });
+}
