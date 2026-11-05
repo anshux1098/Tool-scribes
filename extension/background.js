@@ -53,10 +53,15 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   });
 });
 
+const DEFAULT_SUPABASE_URL = "https://qglvwvpsegrucrhcpzxd.supabase.co";
+const DEFAULT_ANON_KEY = "sb_publishable_pN6EDmb7_lIo00Gtek36zw_QFU8sb3L";
+
 // Sync visit to Supabase tool_visits / vault_items
 async function syncVisitToSupabase(domain) {
   try {
-    const { supabaseUrl, anonKey } = await chrome.storage.sync.get(['supabaseUrl', 'anonKey']);
+    const stored = await chrome.storage.sync.get(['supabaseUrl', 'anonKey']);
+    const supabaseUrl = stored.supabaseUrl || DEFAULT_SUPABASE_URL;
+    const anonKey = stored.anonKey || DEFAULT_ANON_KEY;
     if (!supabaseUrl || !anonKey) return;
 
     // Ping Supabase Edge Function or REST endpoint to record active tool visit

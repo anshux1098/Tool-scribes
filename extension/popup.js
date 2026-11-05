@@ -1,7 +1,6 @@
-// Default configuration fallback
+// Default configuration fallback (matches repository .env)
 const DEFAULT_SUPABASE_URL = "https://qglvwvpsegrucrhcpzxd.supabase.co";
-// In real use, user enters anon key or it is synced from web app
-const DEFAULT_ANON_KEY = "";
+const DEFAULT_ANON_KEY = "sb_publishable_pN6EDmb7_lIo00Gtek36zw_QFU8sb3L";
 
 let currentTab = null;
 let currentConfig = {
