@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="tsGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2D6A4F" />
+      <stop offset="100%" stop-color="#1B4332" />
+    </linearGradient>
+  </defs>
+  <!-- Background rounded squircle -->
+  <rect width="128" height="128" rx="28" fill="url(#tsGrad)" />
+  <!-- Minimalist Brutalist Quill / Scribe Wrench Geometry -->
+  <path d="M40 88 L52 76 M76 52 L88 40" stroke="#FFE066" stroke-width="4" stroke-linecap="round" />
+  <path d="M44 84 C38 68 44 48 60 38 C76 28 88 32 92 36 C96 40 100 52 90 68 C80 84 60 90 44 84 Z" fill="#F0EDE6" />
+  <path d="M44 84 L34 94 C32 96 30 100 32 102 C34 104 38 102 40 100 L50 90 Z" fill="#FFE066" />
+  <!-- Center Accent Core -->
+  <circle cx="68" cy="60" r="8" fill="#2D6A4F" />
+</svg>
