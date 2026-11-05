@@ -1,4 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { SEO } from '@/components/SEO';
 import Navbar from '@/components/Navbar';
 import { useTools } from '@/hooks/useTools';
@@ -22,7 +23,13 @@ const ModalFallback = () => null;
 type Tabs = 'vault' | 'discover';
 
 export default function Index() {
-  const [activeTab, setActiveTab] = useState<Tabs>('discover');
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<Tabs>(() => searchParams.get('tab') === 'vault' ? 'vault' : 'discover');
+
+  useEffect(() => {
+    const t = searchParams.get('tab');
+    if (t === 'vault' || t === 'discover') setActiveTab(t);
+  }, [searchParams]);
   
   const [authOpen, setAuthOpen] = useState(false);
   const [collectionModalOpen, setCollectionModalOpen] = useState(false);

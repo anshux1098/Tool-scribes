@@ -46,6 +46,132 @@ function rowToTool(
   };
 }
 
+
+interface ExtensionClipRaw {
+  id?: string;
+  name?: string;
+  url?: string;
+  description?: string;
+  category?: string;
+  icon?: string;
+  favicon?: string;
+  price_model?: string;
+  is_open_source?: boolean;
+  is_free?: boolean;
+  notes?: string;
+  tags?: string[];
+  created_at?: string;
+  syncedToCloud?: boolean;
+}
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function stringToDeterministicUuid(input: string): string {
+  let h1 = 0xdeadbeef ^ input.length;
+  let h2 = 0x41c6ce57 ^ input.length;
+  let h3 = 0x9e3779b9 ^ input.length;
+  let h4 = 0x85ebca6b ^ input.length;
+  for (let i = 0; i < input.length; i++) {
+    const ch = input.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+    h3 = Math.imul(h3 ^ ch, 2246822519);
+    h4 = Math.imul(h4 ^ ch, 3266489917);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  h3 = Math.imul(h3 ^ (h3 >>> 16), 2246822507) ^ Math.imul(h4 ^ (h4 >>> 13), 3266489909);
+  h4 = Math.imul(h4 ^ (h4 >>> 16), 2246822507) ^ Math.imul(h3 ^ (h3 >>> 13), 3266489909);
+
+  const hex = (n: number) => (n >>> 0).toString(16).padStart(8, '0');
+  const full = hex(h1) + hex(h2) + hex(h3) + hex(h4);
+  return `${full.slice(0, 8)}-${full.slice(8, 12)}-4${full.slice(13, 16)}-8${full.slice(17, 20)}-${full.slice(20, 32)}`;
+}
+
+export function readExtensionClips(): (Tool & { _uuid: string; _extSynced?: boolean; _fromExtension?: boolean })[] {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return [];
+    const raw = window.localStorage.getItem('ts_extension_clips');
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const validCategories = ['ai', 'dev', 'design', 'prod', 'learn', 'util'];
+
+    return parsed
+      .filter((c: ExtensionClipRaw) => c && typeof c.name === 'string' && typeof c.url === 'string')
+      .map((c: ExtensionClipRaw) => {
+        const uuid = (c.id && UUID_REGEX.test(c.id))
+          ? c.id
+          : stringToDeterministicUuid(c.url!.toLowerCase());
+        const cat = validCategories.includes(c.category || '') ? (c.category as ToolCategory) : 'util';
+        const pm = (c.price_model === 'paid' || c.price_model === 'freemium') ? c.price_model : 'free';
+        return {
+          id: hashId(uuid),
+          _uuid: uuid,
+          name: c.name!,
+          url: c.url!,
+          description: c.description || '',
+          category: cat,
+          icon: c.icon || '🔧',
+          favicon: c.favicon || '',
+          ogImage: '',
+          screenshotUrl: '',
+          upvotes: 0,
+          priceModel: pm as Tool['priceModel'],
+          isOpenSource: !!c.is_open_source,
+          requiresLogin: false,
+          isFree: c.is_free !== false,
+          platforms: ['web'],
+          signupRequired: false,
+          upvotedByMe: false,
+          savedToVault: true,
+          isFavorite: false,
+          addedAt: c.created_at ? new Date(c.created_at).getTime() : Date.now(),
+          notes: c.notes || '',
+          tags: Array.isArray(c.tags) ? c.tags : [],
+          _extSynced: !!c.syncedToCloud,
+          _fromExtension: true,
+        };
+      });
+  } catch {
+    return [];
+  }
+}
+
+export function mergeWithExtensionClips(baseTools: (Tool & { _uuid: string })[]): (Tool & { _uuid: string })[] {
+  const extClips = readExtensionClips();
+  if (extClips.length === 0) return baseTools;
+
+  const normalizeHost = (u: string) => {
+    try { return new URL(u).hostname.replace(/^www\./i, '').toLowerCase(); } catch { return u.toLowerCase(); }
+  };
+
+  const existingIds = new Set(baseTools.map(t => t._uuid));
+  const existingUrls = new Set(baseTools.map(t => t.url.toLowerCase()));
+  const existingHosts = new Set(baseTools.map(t => normalizeHost(t.url)));
+
+  const extByHost = new Map(extClips.map(c => [normalizeHost(c.url), c]));
+
+  const updatedBase = baseTools.map(t => {
+    const match = extByHost.get(normalizeHost(t.url));
+    if (match && !t.savedToVault) {
+      return {
+        ...t,
+        savedToVault: true,
+        notes: t.notes || match.notes || '',
+        tags: (t.tags && t.tags.length > 0) ? t.tags : (match.tags || []),
+      };
+    }
+    return t;
+  });
+
+  const newFromExt = extClips.filter(
+    c => !existingIds.has(c._uuid) && !existingUrls.has(c.url.toLowerCase()) && !existingHosts.has(normalizeHost(c.url))
+  );
+
+  return [...newFromExt, ...updatedBase];
+}
+
 // ─── hook ─────────────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 100;
@@ -233,16 +359,17 @@ export function useTools() {
 
       if (cursor) {
         setTools(prev => {
-          const next = [...prev, ...mapped];
+          const next = mergeWithExtensionClips([...prev, ...mapped]);
           cachedTools = next;
           cachedNextCursor = cursorObj;
           return next;
         });
       } else {
-        cachedTools = mapped;
+        const merged = mergeWithExtensionClips(mapped);
+        cachedTools = merged;
         cachedUserKey = userKey;
         cachedNextCursor = cursorObj;
-        setTools(mapped);
+        setTools(merged);
       }
     } catch (e) {
       console.error('fetchAll error', e);
@@ -257,7 +384,9 @@ export function useTools() {
     if (authLoading) return;
 
     if (cachedTools.length > 0 && cachedUserKey === userKey) {
-      setTools(cachedTools);
+      const merged = mergeWithExtensionClips(cachedTools);
+      cachedTools = merged;
+      setTools(merged);
       setNextCursor(cachedNextCursor);
       setLoading(false);
       return;
@@ -269,6 +398,89 @@ export function useTools() {
       });
     }
   }, [authLoading, userKey, fetchAll]);
+
+  // Listen for live clips pushed by the ToolScribe Browser Extension
+  useEffect(() => {
+    const syncClips = () => {
+      setTools(prev => {
+        const merged = mergeWithExtensionClips(prev);
+        cachedTools = merged;
+        return merged;
+      });
+    };
+    window.addEventListener('ts:extension-clips-updated', syncClips);
+    window.addEventListener('storage', syncClips);
+    return () => {
+      window.removeEventListener('ts:extension-clips-updated', syncClips);
+      window.removeEventListener('storage', syncClips);
+    };
+  }, []);
+
+  // Automatically sync unsynced extension clips to Supabase when user is authenticated
+  useEffect(() => {
+    if (!user || !isSupabaseConfigured || loading) return;
+    const extClips = readExtensionClips().filter(c => !c._extSynced);
+    if (extClips.length === 0) return;
+
+    (async () => {
+      for (const clip of extClips) {
+        try {
+          const { data: toolRow, error: tErr } = await supabase
+            .from('tools')
+            .insert({
+              name: clip.name,
+              url: clip.url,
+              description: clip.description,
+              category: clip.category,
+              icon: clip.icon,
+              favicon: clip.favicon,
+              og_image: '',
+              screenshot_url: '',
+              price_model: clip.priceModel ?? 'free',
+              is_open_source: clip.isOpenSource ?? false,
+              requires_login: false,
+              is_free: clip.isFree ?? true,
+              platforms: ['web'],
+              signup_required: false,
+              added_by: user.id,
+            })
+            .select()
+            .single();
+
+          if (!tErr && toolRow) {
+            await supabase
+              .from('vault_items')
+              .upsert({
+                user_id: user.id,
+                tool_id: toolRow.id,
+                is_favorite: false,
+                notes: clip.notes ?? '',
+                tags: clip.tags ?? [],
+              }, { onConflict: 'user_id,tool_id' });
+
+            // Mark synced in localStorage & notify extension
+            try {
+              const raw = localStorage.getItem('ts_extension_clips');
+              if (raw) {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed)) {
+                  const updated = parsed.map((item: ExtensionClipRaw) =>
+                    item.url === clip.url ? { ...item, id: toolRow.id, syncedToCloud: true } : item
+                  );
+                  localStorage.setItem('ts_extension_clips', JSON.stringify(updated));
+                }
+              }
+              window.dispatchEvent(new CustomEvent('ts:mark-clip-synced', {
+                detail: { url: clip.url, cloudUuid: toolRow.id }
+              }));
+            } catch { /* ignore storage errors */ }
+          }
+        } catch (err) {
+          console.debug('[useTools] background extension clip sync skipped:', err);
+        }
+      }
+    })();
+  }, [user, loading]);
 
   const fetchMore = useCallback(() => {
     if (nextCursor && !loading) {
@@ -448,10 +660,28 @@ export function useTools() {
   }, [user, resolveUuidOrWarn]);
 
   const removeFromVault = useCallback(async (numId: number): Promise<{ error?: string }> => {
+    const tool = toolsRef.current.find(t => t.id === numId);
+    if (tool) {
+      try {
+        const raw = localStorage.getItem('ts_extension_clips');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const filtered = parsed.filter((c: ExtensionClipRaw) => c.url !== tool.url && c.id !== tool._uuid);
+            localStorage.setItem('ts_extension_clips', JSON.stringify(filtered));
+          }
+        }
+      } catch { /* ignore */ }
+    }
+    if (tool && (tool as Tool & { _fromExtension?: boolean })._fromExtension && !user) {
+      setTools(prev => prev.map(t =>
+        t.id === numId ? { ...t, savedToVault: false, isFavorite: false, notes: '', tags: [] } : t
+      ));
+      return {};
+    }
     if (!user) return { error: 'Not authenticated' };
     const uuid = await resolveUuidOrWarn(numId, 'removeFromVault');
     if (!uuid) return { error: 'Tool not found' };
-    const tool = toolsRef.current.find(t => t.id === numId);
     if (!tool?.savedToVault) return {};
     setTools(prev => prev.map(t =>
       t.id === numId ? { ...t, savedToVault: false, isFavorite: false, notes: '', tags: [], lastVisited: undefined, visitCount: 0 } : t

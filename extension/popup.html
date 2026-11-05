@@ -34,8 +34,12 @@
     <!-- Settings Drawer (Hidden by default) -->
     <div id="settings-panel" class="settings-panel hidden">
       <div class="settings-header">
-        <span class="settings-title">Supabase Connection</span>
-        <span id="conn-status" class="status-pill offline">Checking...</span>
+        <span class="settings-title">Supabase & App Connection</span>
+        <span id="conn-status" class="status-pill online">Ready</span>
+      </div>
+      <div class="field-group">
+        <label for="cfg-webapp-url">ToolScribe Web App URL</label>
+        <input type="text" id="cfg-webapp-url" placeholder="http://localhost:8080" class="input-text">
       </div>
       <div class="field-group">
         <label for="cfg-supabase-url">Supabase Project URL</label>
@@ -43,11 +47,7 @@
       </div>
       <div class="field-group">
         <label for="cfg-supabase-key">Anon Public Key</label>
-        <input type="password" id="cfg-supabase-key" placeholder="eyJhbGciOi..." class="input-text">
-      </div>
-      <div class="field-group">
-        <label for="cfg-user-email">Logged In As</label>
-        <input type="text" id="cfg-user-email" placeholder="Optional (for private vault sync)" class="input-text">
+        <input type="password" id="cfg-supabase-key" placeholder="sb_publishable_..." class="input-text">
       </div>
       <button id="btn-save-settings" class="btn btn-secondary">Save Configuration</button>
     </div>
@@ -68,20 +68,20 @@
       <div class="form-section">
         <div class="form-row">
           <div class="field-group flex-1">
-            <label for="tool-collection">Collection</label>
+            <label for="tool-collection">Destination</label>
             <select id="tool-collection" class="input-select">
-              <option value="vault">Personal Vault (All Saves)</option>
+              <option value="vault">Personal Vault + Discover</option>
             </select>
           </div>
           <div class="field-group flex-1">
             <label for="tool-category">Category</label>
             <select id="tool-category" class="input-select">
               <option value="dev">Developer Tools</option>
-              <option value="ai">AI & Machine Learning</option>
-              <option value="design">Design & Assets</option>
-              <option value="writing">Writing & Docs</option>
-              <option value="util">Utilities</option>
-              <option value="media">Media & Video</option>
+              <option value="ai">AI & ML</option>
+              <option value="design">Design & UI</option>
+              <option value="prod">Productivity</option>
+              <option value="learn">Learning</option>
+              <option value="util">Utilities & Social</option>
             </select>
           </div>
         </div>
@@ -90,22 +90,21 @@
           <div class="field-group flex-1">
             <label for="tool-pricing">Pricing Model</label>
             <select id="tool-pricing" class="input-select">
-              <option value="Freemium">Freemium</option>
-              <option value="Free">100% Free</option>
-              <option value="Open Source">Open Source</option>
-              <option value="Free Trial">Free Trial</option>
-              <option value="Paid">Paid Only</option>
+              <option value="freemium">Freemium</option>
+              <option value="free">100% Free</option>
+              <option value="open_source">Open Source</option>
+              <option value="paid">Paid Only</option>
             </select>
           </div>
           <div class="field-group flex-1">
             <label for="tool-tags">Tags</label>
-            <input type="text" id="tool-tags" class="input-text" placeholder="cli, react, self-hosted">
+            <input type="text" id="tool-tags" class="input-text" placeholder="cli, social, web">
           </div>
         </div>
 
         <div class="field-group">
           <label for="tool-gotcha">Personal Note / "Gotcha"</label>
-          <input type="text" id="tool-gotcha" class="input-text" placeholder="e.g. Rate-limits after 50 req/min, great free tier">
+          <input type="text" id="tool-gotcha" class="input-text" placeholder="e.g. Great free tier, rate-limits after 50 req/min">
         </div>
       </div>
 
@@ -122,7 +121,7 @@
       <!-- Feedback / Result Banner -->
       <div id="result-banner" class="result-banner hidden">
         <span id="result-text">Saved to your vault!</span>
-        <a id="result-link" href="#" target="_blank" class="result-link">Open in Web App &rarr;</a>
+        <a id="result-link" href="#" class="result-link">Open Vault &rarr;</a>
       </div>
     </main>
   </div>

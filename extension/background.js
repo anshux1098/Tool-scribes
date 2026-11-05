@@ -1,6 +1,73 @@
 // ToolScribe Background Service Worker (Manifest V3)
 
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+const DEFAULT_SUPABASE_URL = "https://qglvwvpsegrucrhcpzxd.supabase.co";
+const DEFAULT_ANON_KEY = "sb_publishable_pN6EDmb7_lIo00Gtek36zw_QFU8sb3L";
+
+// Backfill any domains in cachedVaultDomains into full ts_clipped_tools entries immediately on worker boot
+function backfillAndBroadcast() {
+  chrome.storage.local.get(['cachedVaultDomains', 'ts_clipped_tools'], async (res) => {
+    const domains = Array.isArray(res.cachedVaultDomains) ? res.cachedVaultDomains : [];
+    const clips = Array.isArray(res.ts_clipped_tools) ? res.ts_clipped_tools : [];
+    let changed = false;
+
+    for (const rawDomain of domains) {
+      if (!rawDomain || typeof rawDomain !== 'string') continue;
+      const clean = rawDomain.replace(/^www\./i, '').toLowerCase();
+      const exists = clips.some(c => {
+        try {
+          return new URL(c.url).hostname.replace(/^www\./i, '').toLowerCase() === clean;
+        } catch {
+          return false;
+        }
+      });
+
+      if (!exists) {
+        const baseName = clean.split('.')[0] || clean;
+        const prettyName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
+        clips.unshift({
+          id: `ext-${clean}`,
+          name: prettyName,
+          url: `https://${rawDomain}`,
+          description: `${prettyName} — saved to your personal Vault via the ToolScribe Browser Extension.`,
+          category: 'util',
+          icon: '🔧',
+          favicon: `https://www.google.com/s2/favicons?domain=${clean}&sz=64`,
+          price_model: 'free',
+          is_open_source: false,
+          is_free: true,
+          notes: '',
+          tags: ['extension-clip'],
+          created_at: new Date().toISOString(),
+          syncedToCloud: false
+        });
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      chrome.storage.local.set({ ts_clipped_tools: clips });
+    }
+
+    // Broadcast to any open ToolScribe web app tabs
+    try {
+      const tabs = await chrome.tabs.query({});
+      for (const t of tabs) {
+        if (!t.id || !t.url) continue;
+        if (
+          t.url.includes('localhost') ||
+          t.url.includes('127.0.0.1') ||
+          t.url.includes('tool-scribes') ||
+          t.url.includes('toolscribes')
+        ) {
+          chrome.tabs.sendMessage(t.id, { type: 'TS_CLIP_UPDATED', clips }).catch(() => {});
+        }
+      }
+    } catch {}
+  });
+}
+
+backfillAndBroadcast();
 
 // Listen for tab updates (Passive Dust Collector Tracker)
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
@@ -8,9 +75,9 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
   // Ignore internal/browser urls
   if (
-    tab.url.startsWith('chrome://') || 
-    tab.url.startsWith('chrome-extension://') || 
-    tab.url.startsWith('edge://') || 
+    tab.url.startsWith('chrome://') ||
+    tab.url.startsWith('chrome-extension://') ||
+    tab.url.startsWith('edge://') ||
     tab.url.startsWith('about:') ||
     tab.url.startsWith('brave://')
   ) {
@@ -53,9 +120,6 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   });
 });
 
-const DEFAULT_SUPABASE_URL = "https://qglvwvpsegrucrhcpzxd.supabase.co";
-const DEFAULT_ANON_KEY = "sb_publishable_pN6EDmb7_lIo00Gtek36zw_QFU8sb3L";
-
 // Sync visit to Supabase tool_visits / vault_items
 async function syncVisitToSupabase(domain) {
   try {
@@ -64,7 +128,6 @@ async function syncVisitToSupabase(domain) {
     const anonKey = stored.anonKey || DEFAULT_ANON_KEY;
     if (!supabaseUrl || !anonKey) return;
 
-    // Ping Supabase Edge Function or REST endpoint to record active tool visit
     await fetch(`${supabaseUrl}/rest/v1/rpc/record_tool_visit`, {
       method: 'POST',
       headers: {
@@ -73,9 +136,7 @@ async function syncVisitToSupabase(domain) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ tool_domain: domain })
-    }).catch(() => {
-      // Endpoint may be custom or offline, quiet fallback
-    });
+    }).catch(() => {});
   } catch (err) {
     console.debug('[ToolScribe Background] Visit sync skipped:', err);
   }
@@ -85,6 +146,7 @@ async function syncVisitToSupabase(domain) {
 try {
   if (typeof chrome !== 'undefined' && chrome?.contextMenus?.create) {
     chrome.runtime.onInstalled.addListener(() => {
+      backfillAndBroadcast();
       try {
         chrome.contextMenus.create({
           id: "toolscribe-clip-page",

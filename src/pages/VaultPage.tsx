@@ -79,7 +79,7 @@ export default function VaultPage({ tools, onToggleFavorite, onRemoveFromVault, 
     ? formatDistanceToNow(Math.max(...vaultWithHealth.map(t => t.addedAt)), { addSuffix: true })
     : null;
 
-  if (!user) {
+  if (!user && vaultWithHealth.length === 0) {
     return (
       <div className="max-w-3xl mx-auto px-6 pt-16 pb-24 flex flex-col items-center text-center">
         <p className="text-[11px] font-mono text-tv-text-m uppercase tracking-widest mb-4">Your Collection</p>

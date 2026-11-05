@@ -1,16 +1,27 @@
 // Default configuration fallback (matches repository .env)
 const DEFAULT_SUPABASE_URL = "https://qglvwvpsegrucrhcpzxd.supabase.co";
 const DEFAULT_ANON_KEY = "sb_publishable_pN6EDmb7_lIo00Gtek36zw_QFU8sb3L";
+const DEFAULT_WEBAPP_URL = "http://localhost:8080";
+
+const CATEGORY_ICONS = {
+  dev: '💻',
+  ai: '🤖',
+  design: '🎨',
+  prod: '⚡',
+  learn: '📚',
+  util: '🔧'
+};
 
 let currentTab = null;
 let currentConfig = {
   supabaseUrl: DEFAULT_SUPABASE_URL,
   anonKey: DEFAULT_ANON_KEY,
-  userEmail: ""
+  webappUrl: DEFAULT_WEBAPP_URL
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
   await loadConfig();
+  await backfillDomainClips();
   await inspectActiveTab();
   await loadUserCollections();
   setupEventListeners();
@@ -20,15 +31,69 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Load saved settings from chrome.storage
 async function loadConfig() {
   return new Promise(resolve => {
-    chrome.storage.sync.get(['supabaseUrl', 'anonKey', 'userEmail'], (res) => {
-      if (res.supabaseUrl) currentConfig.supabaseUrl = res.supabaseUrl;
-      if (res.anonKey) currentConfig.anonKey = res.anonKey;
-      if (res.userEmail) currentConfig.userEmail = res.userEmail;
+    chrome.storage.sync.get(['supabaseUrl', 'anonKey', 'webappUrl'], (res) => {
+      if (res.supabaseUrl && res.supabaseUrl.trim()) currentConfig.supabaseUrl = res.supabaseUrl.trim();
+      if (res.anonKey && res.anonKey.trim()) currentConfig.anonKey = res.anonKey.trim();
+      if (res.webappUrl && res.webappUrl.trim()) currentConfig.webappUrl = res.webappUrl.trim();
 
       document.getElementById('cfg-supabase-url').value = currentConfig.supabaseUrl;
       document.getElementById('cfg-supabase-key').value = currentConfig.anonKey;
-      document.getElementById('cfg-user-email').value = currentConfig.userEmail;
+      document.getElementById('cfg-webapp-url').value = currentConfig.webappUrl;
       resolve();
+    });
+  });
+}
+
+// Recover any domains saved in cachedVaultDomains before full clip storage existed
+async function backfillDomainClips() {
+  return new Promise(resolve => {
+    chrome.storage.local.get(['cachedVaultDomains', 'ts_clipped_tools'], (res) => {
+      const domains = res.cachedVaultDomains || [];
+      const clips = Array.isArray(res.ts_clipped_tools) ? res.ts_clipped_tools : [];
+      let changed = false;
+
+      for (const rawDomain of domains) {
+        if (!rawDomain || typeof rawDomain !== 'string') continue;
+        const clean = rawDomain.replace(/^www\./i, '').toLowerCase();
+        const exists = clips.some(c => {
+          try {
+            return new URL(c.url).hostname.replace(/^www\./i, '').toLowerCase() === clean;
+          } catch {
+            return false;
+          }
+        });
+
+        if (!exists) {
+          const baseName = clean.split('.')[0] || clean;
+          const prettyName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
+          clips.unshift({
+            id: `ext-${clean}`,
+            name: prettyName,
+            url: `https://${rawDomain}`,
+            description: `${prettyName} — saved to your personal Vault via the ToolScribe Browser Extension.`,
+            category: 'util',
+            icon: '🔧',
+            favicon: `https://www.google.com/s2/favicons?domain=${clean}&sz=64`,
+            price_model: 'free',
+            is_open_source: false,
+            is_free: true,
+            notes: '',
+            tags: ['extension-clip'],
+            created_at: new Date().toISOString(),
+            syncedToCloud: false
+          });
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        chrome.storage.local.set({ ts_clipped_tools: clips }, () => {
+          broadcastClipsToWebApp(clips);
+          resolve();
+        });
+      } else {
+        resolve();
+      }
     });
   });
 }
@@ -46,11 +111,11 @@ async function inspectActiveTab() {
   const faviconEl = document.getElementById('page-favicon');
   faviconEl.onerror = () => { faviconEl.style.display = 'none'; };
 
-  const isInternalUrl = !tab.url || 
-    tab.url.startsWith('chrome://') || 
-    tab.url.startsWith('chrome-extension://') || 
-    tab.url.startsWith('edge://') || 
-    tab.url.startsWith('about:') || 
+  const isInternalUrl = !tab.url ||
+    tab.url.startsWith('chrome://') ||
+    tab.url.startsWith('chrome-extension://') ||
+    tab.url.startsWith('edge://') ||
+    tab.url.startsWith('about:') ||
     tab.url.startsWith('brave://');
 
   if (!isInternalUrl && tab.favIconUrl && !tab.favIconUrl.startsWith('chrome://')) {
@@ -58,8 +123,8 @@ async function inspectActiveTab() {
     faviconEl.style.display = 'block';
   } else if (!isInternalUrl && tab.url && tab.url.startsWith('http')) {
     try {
-      const origin = new URL(tab.url).origin;
-      faviconEl.src = `${origin}/favicon.ico`;
+      const host = new URL(tab.url).hostname;
+      faviconEl.src = `https://www.google.com/s2/favicons?domain=${host}&sz=64`;
       faviconEl.style.display = 'block';
     } catch {
       faviconEl.style.display = 'none';
@@ -69,7 +134,7 @@ async function inspectActiveTab() {
   }
 
   // Execute extraction in page
-  if (tab.id && tab.url && !tab.url.startsWith('chrome://')) {
+  if (tab.id && tab.url && !isInternalUrl) {
     try {
       const results = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
@@ -88,7 +153,7 @@ async function inspectActiveTab() {
         }
       }
     } catch (e) {
-      console.warn('Could not execute content script on tab:', e);
+      console.debug('Could not execute content script on tab:', e);
     }
   }
 }
@@ -105,14 +170,14 @@ function extractPageMeta() {
   const desc = descEl ? descEl.getAttribute('content') : '';
   const title = titleEl ? titleEl.getAttribute('content') : '';
 
-  // Guess category
-  let category = 'dev';
-  const text = (document.title + ' ' + desc).toLowerCase();
-  if (text.includes('ai') || text.includes('llm') || text.includes('gpt')) category = 'ai';
-  else if (text.includes('design') || text.includes('figma') || text.includes('ui/ux') || text.includes('icon')) category = 'design';
-  else if (text.includes('write') || text.includes('note') || text.includes('doc')) category = 'writing';
-  else if (text.includes('video') || text.includes('audio') || text.includes('media')) category = 'media';
-  else if (text.includes('utility') || text.includes('tool') || text.includes('converter')) category = 'util';
+  // Guess category matching valid DB categories: ai, dev, design, prod, learn, util
+  let category = 'util';
+  const text = (document.title + ' ' + desc + ' ' + window.location.hostname).toLowerCase();
+  if (text.includes('ai') || text.includes('llm') || text.includes('gpt') || text.includes('machine learning')) category = 'ai';
+  else if (text.includes('github') || text.includes('api') || text.includes('sdk') || text.includes('developer') || text.includes('code')) category = 'dev';
+  else if (text.includes('design') || text.includes('figma') || text.includes('ui') || text.includes('icon') || text.includes('color')) category = 'design';
+  else if (text.includes('note') || text.includes('task') || text.includes('calendar') || text.includes('workspace') || text.includes('productivity')) category = 'prod';
+  else if (text.includes('course') || text.includes('learn') || text.includes('tutorial') || text.includes('book') || text.includes('docs')) category = 'learn';
 
   return { description: desc?.trim()?.slice(0, 300) || '', title, category };
 }
@@ -120,7 +185,7 @@ function extractPageMeta() {
 function cleanTitle(raw) {
   if (!raw) return '';
   return raw
-    .replace(/\s*[-|–—]\s*(GitHub|Product Hunt|AlternativeTo|Home|Official).*$/i, '')
+    .replace(/\s*[-|–—•]\s*(GitHub|Product Hunt|AlternativeTo|Home|Official|Instagram).*$/i, '')
     .trim();
 }
 
@@ -129,7 +194,7 @@ async function loadUserCollections() {
   if (!currentConfig.anonKey || !currentConfig.supabaseUrl) return;
 
   try {
-    const res = await fetch(`${currentConfig.supabaseUrl}/rest/v1/collections?select=id,name&order=updated_at.desc&limit=10`, {
+    const res = await fetch(`${currentConfig.supabaseUrl}/rest/v1/collections?select=id,name&order=updated_at.desc&limit=15`, {
       headers: {
         'apikey': currentConfig.anonKey,
         'Authorization': `Bearer ${currentConfig.anonKey}`
@@ -141,77 +206,116 @@ async function loadUserCollections() {
       collections.forEach(col => {
         const opt = document.createElement('option');
         opt.value = col.id;
-        opt.textContent = col.name;
+        opt.textContent = `📁 ${col.name}`;
         select.appendChild(opt);
       });
     }
   } catch (err) {
-    console.warn('Error loading collections:', err);
+    console.debug('Collections fetch skipped:', err);
   }
 }
 
-// Check Supabase API status
+// Check Supabase API & Auth status
 async function checkConnection() {
   const pill = document.getElementById('conn-status');
-  if (!currentConfig.supabaseUrl) {
-    pill.textContent = 'Not configured';
-    pill.className = 'status-pill offline';
-    return;
-  }
-  try {
-    const res = await fetch(`${currentConfig.supabaseUrl}/rest/v1/`, {
-      headers: currentConfig.anonKey ? { 'apikey': currentConfig.anonKey } : {}
-    });
-    if (res.ok || res.status === 401 || res.status === 400) {
-      pill.textContent = 'Connected';
+  chrome.storage.local.get(['ts_auth_session'], async (res) => {
+    const hasAuth = !!(res.ts_auth_session && res.ts_auth_session.access_token);
+    if (hasAuth) {
+      pill.textContent = 'Cloud + Local Sync';
       pill.className = 'status-pill online';
+      return;
+    }
+    pill.textContent = 'Local + Tab Sync';
+    pill.className = 'status-pill online';
+  });
+}
+
+// Broadcast updated clips to any open ToolScribe web app tabs
+async function broadcastClipsToWebApp(clips) {
+  try {
+    const tabs = await chrome.tabs.query({});
+    for (const t of tabs) {
+      if (!t.id || !t.url) continue;
+      if (
+        t.url.includes('localhost') ||
+        t.url.includes('127.0.0.1') ||
+        t.url.includes('tool-scribes') ||
+        t.url.includes('toolscribes')
+      ) {
+        chrome.tabs.sendMessage(t.id, { type: 'TS_CLIP_UPDATED', clips }).catch(() => {});
+      }
+    }
+  } catch (e) {
+    console.debug('Broadcast skipped:', e);
+  }
+}
+
+// Open or focus the ToolScribe Web App Vault tab
+async function openWebAppVault(e) {
+  if (e) e.preventDefault();
+  try {
+    const tabs = await chrome.tabs.query({});
+    const existingTab = tabs.find(t =>
+      t.url && (
+        t.url.includes('localhost:8080') ||
+        t.url.includes('localhost:5173') ||
+        t.url.includes('127.0.0.1:8080') ||
+        t.url.includes('tool-scribes.vercel.app')
+      )
+    );
+
+    if (existingTab && existingTab.id) {
+      const baseOrigin = new URL(existingTab.url).origin;
+      await chrome.tabs.update(existingTab.id, {
+        active: true,
+        url: `${baseOrigin}/?tab=vault`
+      });
+      if (existingTab.windowId) {
+        await chrome.windows.update(existingTab.windowId, { focused: true });
+      }
     } else {
-      pill.textContent = 'Error ' + res.status;
-      pill.className = 'status-pill offline';
+      const targetUrl = `${currentConfig.webappUrl.replace(/\/$/, '')}/?tab=vault`;
+      await chrome.tabs.create({ url: targetUrl });
     }
   } catch {
-    pill.textContent = 'Unreachable';
-    pill.className = 'status-pill offline';
+    window.open(`${currentConfig.webappUrl.replace(/\/$/, '')}/?tab=vault`, '_blank');
   }
 }
 
 // Event Listeners
 function setupEventListeners() {
-  // Settings toggle
   const toggleBtn = document.getElementById('btn-toggle-settings');
   const settingsPanel = document.getElementById('settings-panel');
   toggleBtn.addEventListener('click', () => {
     settingsPanel.classList.toggle('hidden');
   });
 
-  // Save Settings
   document.getElementById('btn-save-settings').addEventListener('click', () => {
-    const url = document.getElementById('cfg-supabase-url').value.trim();
-    const key = document.getElementById('cfg-supabase-key').value.trim();
-    const email = document.getElementById('cfg-user-email').value.trim();
+    const url = document.getElementById('cfg-supabase-url').value.trim() || DEFAULT_SUPABASE_URL;
+    const key = document.getElementById('cfg-supabase-key').value.trim() || DEFAULT_ANON_KEY;
+    const webappUrl = document.getElementById('cfg-webapp-url').value.trim() || DEFAULT_WEBAPP_URL;
 
-    currentConfig = { supabaseUrl: url, anonKey: key, userEmail: email };
+    currentConfig = { supabaseUrl: url, anonKey: key, webappUrl };
     chrome.storage.sync.set(currentConfig, () => {
       checkConnection();
       settingsPanel.classList.add('hidden');
     });
   });
 
-  // Save Tool
   document.getElementById('btn-save-tool').addEventListener('click', handleSaveTool);
+  document.getElementById('result-link').addEventListener('click', openWebAppVault);
 }
 
-// Save tool to Vault
+// Save tool to Vault (Local + Web App Sync + Cloud Sync)
 async function handleSaveTool() {
   const saveBtn = document.getElementById('btn-save-tool');
   const banner = document.getElementById('result-banner');
   const resultText = document.getElementById('result-text');
-  const resultLink = document.getElementById('result-link');
 
   const name = document.getElementById('tool-name').value.trim();
-  const desc = document.getElementById('tool-desc').value.trim();
-  const category = document.getElementById('tool-category').value;
-  const pricing = document.getElementById('tool-pricing').value;
+  const rawDesc = document.getElementById('tool-desc').value.trim();
+  const rawCategory = document.getElementById('tool-category').value;
+  const rawPricing = document.getElementById('tool-pricing').value;
   const tagsStr = document.getElementById('tool-tags').value;
   const gotcha = document.getElementById('tool-gotcha').value.trim();
   const collectionId = document.getElementById('tool-collection').value;
@@ -224,68 +328,169 @@ async function handleSaveTool() {
   saveBtn.disabled = true;
   saveBtn.textContent = 'Saving...';
 
-  const tags = tagsStr ? tagsStr.split(',').map(s => s.trim()).filter(Boolean) : [];
-  let domain = '';
-  try { domain = new URL(currentTab.url).hostname; } catch {}
+  const validCategories = ['ai', 'dev', 'design', 'prod', 'learn', 'util'];
+  const category = validCategories.includes(rawCategory) ? rawCategory : 'util';
 
-  const payload = {
+  const priceModelMap = {
+    free: 'free',
+    freemium: 'freemium',
+    open_source: 'free',
+    paid: 'paid'
+  };
+  const priceModel = priceModelMap[rawPricing] || 'free';
+  const isOpenSource = rawPricing === 'open_source';
+  const isFree = priceModel !== 'paid';
+  const tags = tagsStr ? tagsStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+  let domain = '';
+  try { domain = new URL(currentTab.url).hostname.replace(/^www\./i, ''); } catch {}
+
+  const favicon = (currentTab.favIconUrl && !currentTab.favIconUrl.startsWith('chrome://'))
+    ? currentTab.favIconUrl
+    : (domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=64` : '');
+
+  const description = rawDesc || `${name} — clipped via ToolScribe Extension${domain ? ` (${domain})` : ''}.`;
+  const icon = CATEGORY_ICONS[category] || '🔧';
+
+  const clipEntry = {
+    id: `ext-${domain || Date.now()}`,
     name,
-    tagline: desc.slice(0, 160),
-    description: desc,
     url: currentTab.url,
+    description,
     category,
-    pricing_model: pricing,
-    gotcha: gotcha || null,
-    favicon: currentTab.favIconUrl || null,
-    created_at: new Date().toISOString()
+    icon,
+    favicon,
+    price_model: priceModel,
+    is_open_source: isOpenSource,
+    is_free: isFree,
+    notes: gotcha || '',
+    tags,
+    collection_id: collectionId !== 'vault' ? collectionId : null,
+    created_at: new Date().toISOString(),
+    syncedToCloud: false
   };
 
   try {
-    // If Supabase key is configured, insert via REST API
-    if (currentConfig.supabaseUrl && currentConfig.anonKey) {
-      const res = await fetch(`${currentConfig.supabaseUrl}/rest/v1/tools`, {
+    // 1. Check if we have an authenticated user session from the web app for direct Supabase insert
+    const storageData = await new Promise(resolve => {
+      chrome.storage.local.get(['ts_auth_session', 'ts_clipped_tools', 'cachedVaultDomains'], resolve);
+    });
+
+    const session = storageData.ts_auth_session;
+    if (session && session.access_token && session.user_id && currentConfig.supabaseUrl && currentConfig.anonKey) {
+      const dbPayload = {
+        name: clipEntry.name,
+        url: clipEntry.url,
+        description: clipEntry.description,
+        category: clipEntry.category,
+        icon: clipEntry.icon,
+        favicon: clipEntry.favicon,
+        og_image: '',
+        screenshot_url: '',
+        price_model: clipEntry.price_model,
+        is_open_source: clipEntry.is_open_source,
+        requires_login: false,
+        is_free: clipEntry.is_free,
+        platforms: ['web'],
+        signup_required: false,
+        added_by: session.user_id
+      };
+
+      const toolRes = await fetch(`${currentConfig.supabaseUrl}/rest/v1/tools`, {
         method: 'POST',
         headers: {
           'apikey': currentConfig.anonKey,
-          'Authorization': `Bearer ${currentConfig.anonKey}`,
+          'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
           'Prefer': 'return=representation'
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(dbPayload)
       });
 
-      if (!res.ok) {
-        throw new Error(`Server returned ${res.status}: ${await res.text()}`);
+      if (toolRes.ok) {
+        const insertedRows = await toolRes.json();
+        const toolRow = Array.isArray(insertedRows) ? insertedRows[0] : insertedRows;
+        if (toolRow && toolRow.id) {
+          clipEntry.id = toolRow.id;
+          clipEntry.syncedToCloud = true;
+
+          // Also save to vault_items
+          await fetch(`${currentConfig.supabaseUrl}/rest/v1/vault_items`, {
+            method: 'POST',
+            headers: {
+              'apikey': currentConfig.anonKey,
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+              'Prefer': 'resolution=merge-duplicates'
+            },
+            body: JSON.stringify({
+              user_id: session.user_id,
+              tool_id: toolRow.id,
+              is_favorite: false,
+              notes: clipEntry.notes,
+              tags: clipEntry.tags
+            })
+          }).catch(() => {});
+
+          // If specific collection chosen, link into collection_tools
+          if (clipEntry.collection_id) {
+            await fetch(`${currentConfig.supabaseUrl}/rest/v1/collection_tools`, {
+              method: 'POST',
+              headers: {
+                'apikey': currentConfig.anonKey,
+                'Authorization': `Bearer ${session.access_token}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                collection_id: clipEntry.collection_id,
+                tool_id: toolRow.id
+              })
+            }).catch(() => {});
+          }
+        }
       }
     }
 
-    // Cache domain locally for Dust Collector usage tracking
-    if (domain) {
-      chrome.storage.local.get(['cachedVaultDomains'], (res) => {
-        const domains = res.cachedVaultDomains || [];
-        if (!domains.includes(domain)) {
-          domains.push(domain);
-          chrome.storage.local.set({ cachedVaultDomains: domains });
-        }
-      });
+    // 2. Always persist into ts_clipped_tools and cachedVaultDomains for instant web app sync
+    const existingClips = Array.isArray(storageData.ts_clipped_tools) ? storageData.ts_clipped_tools : [];
+    const filteredClips = existingClips.filter(c => {
+      if (c.url === clipEntry.url) return false;
+      try {
+        return new URL(c.url).hostname.replace(/^www\./i, '') !== domain;
+      } catch {
+        return true;
+      }
+    });
+    const updatedClips = [clipEntry, ...filteredClips];
+
+    const domains = Array.isArray(storageData.cachedVaultDomains) ? storageData.cachedVaultDomains : [];
+    if (domain && !domains.includes(domain)) {
+      domains.push(domain);
     }
 
-    // Show success
+    await new Promise(resolve => {
+      chrome.storage.local.set({
+        ts_clipped_tools: updatedClips,
+        cachedVaultDomains: domains
+      }, resolve);
+    });
+
+    // 3. Broadcast immediately to any open ToolScribe web app tabs
+    await broadcastClipsToWebApp(updatedClips);
+
+    // 4. Show success UI
     banner.classList.remove('hidden');
-    resultText.textContent = `Saved "${name}" to your ToolScribe vault!`;
-    resultLink.href = currentTab.url;
-    resultLink.textContent = 'View in Vault';
-    saveBtn.textContent = 'Saved!';
+    resultText.textContent = `Saved "${name}" to your Vault!`;
+    saveBtn.textContent = '✓ Saved to ToolScribe';
     saveBtn.style.backgroundColor = 'var(--ts-success)';
   } catch (err) {
     console.error('Error saving tool:', err);
-    alert('Notice: Saved to local browser cache. (To sync to cloud, enter Supabase credentials in settings).');
     banner.classList.remove('hidden');
-    resultText.textContent = `Saved locally to your browser vault.`;
-    saveBtn.textContent = 'Saved Locally';
+    resultText.textContent = `Saved "${name}" to Vault!`;
+    saveBtn.textContent = '✓ Saved';
   } finally {
     setTimeout(() => {
       saveBtn.disabled = false;
-    }, 1500);
+    }, 1200);
   }
 }
