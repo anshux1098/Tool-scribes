@@ -53,7 +53,10 @@ export default function Index() {
       if (vaultTools.length === 0) {
         let onboarded = false;
         try { onboarded = localStorage.getItem('ts_onboarded') === 'true'; } catch { /* storage blocked */ }
-        if (!onboarded) setOnboardingOpen(true);
+        if (!onboarded) {
+          try { localStorage.setItem('ts_onboarded', 'true'); } catch { /* storage blocked */ }
+          setOnboardingOpen(true);
+        }
       }
     }
   }, [user, loading, tools]);

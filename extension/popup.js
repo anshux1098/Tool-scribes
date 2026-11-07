@@ -1,7 +1,7 @@
 // Default configuration fallback (matches repository .env)
 const DEFAULT_SUPABASE_URL = "https://qglvwvpsegrucrhcpzxd.supabase.co";
 const DEFAULT_ANON_KEY = "sb_publishable_pN6EDmb7_lIo00Gtek36zw_QFU8sb3L";
-const DEFAULT_WEBAPP_URL = "https://tool-scribes.vercel.app";
+const DEFAULT_WEBAPP_URL = "https://tool-scribes-p9lk.vercel.app";
 
 const CATEGORY_ICONS = {
   dev: '💻',
@@ -227,7 +227,17 @@ async function loadConfig() {
     chrome.storage.sync.get(['supabaseUrl', 'anonKey', 'webappUrl'], (res) => {
       if (res.supabaseUrl && res.supabaseUrl.trim()) currentConfig.supabaseUrl = res.supabaseUrl.trim();
       if (res.anonKey && res.anonKey.trim()) currentConfig.anonKey = res.anonKey.trim();
-      if (res.webappUrl && res.webappUrl.trim()) currentConfig.webappUrl = res.webappUrl.trim();
+      if (
+        res.webappUrl &&
+        res.webappUrl.trim() &&
+        !res.webappUrl.includes('tool-scribes.vercel.app') &&
+        !res.webappUrl.includes('tool-scribes-beta.vercel.app')
+      ) {
+        currentConfig.webappUrl = res.webappUrl.trim().replace(/\/$/, '');
+      } else {
+        currentConfig.webappUrl = DEFAULT_WEBAPP_URL;
+        chrome.storage.sync.set({ webappUrl: DEFAULT_WEBAPP_URL });
+      }
 
       document.getElementById('cfg-supabase-url').value = currentConfig.supabaseUrl;
       document.getElementById('cfg-supabase-key').value = currentConfig.anonKey;
@@ -540,6 +550,7 @@ async function openWebAppVault(e) {
     const tabs = await chrome.tabs.query({});
     const existingTab = tabs.find(t =>
       t.url && (
+        t.url.includes('tool-scribes-p9lk.vercel.app') ||
         t.url.includes('tool-scribes.vercel.app') ||
         t.url.includes('tool-scribes-beta.vercel.app') ||
         t.url.includes('localhost:8080') ||

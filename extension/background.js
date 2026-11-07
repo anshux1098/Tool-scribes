@@ -229,6 +229,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   }
 
   if (
+    tab.url.includes('tool-scribes-p9lk.vercel.app') ||
     tab.url.includes('tool-scribes.vercel.app') ||
     tab.url.includes('tool-scribes-beta.vercel.app') ||
     tab.url.includes('localhost:8080') ||

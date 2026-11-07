@@ -168,7 +168,7 @@
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 2. EXTERNAL SITES: CONTEXTUAL TOOLSCRIBE RADAR PILL
+  // 2. EXTERNAL SITES: CONTEXTUAL TOOLSCRIBE RADAR PILL (SHOWS ONLY ONCE)
   // ═══════════════════════════════════════════════════════════════════════════
   if (isBlockedToolUrl(window.location.href)) return;
   if (document.getElementById('toolscribe-radar-root')) return;
@@ -176,7 +176,7 @@
   const searchEngines = ['google.', 'bing.', 'duckduckgo.', 'baidu.'];
   if (searchEngines.some(h => host.includes(h))) return;
 
-  if (sessionStorage.getItem('ts_radar_dismissed')) return;
+  if (sessionStorage.getItem('ts_radar_dismissed') || localStorage.getItem('ts_radar_dismissed')) return;
 
   const isLikelyTool = (
     host.includes('github.com') ||
@@ -186,59 +186,82 @@
 
   if (!isLikelyTool) return;
 
-  const root = document.createElement('div');
-  root.id = 'toolscribe-radar-root';
+  // Check global extension storage so the Radar popup only ever shows 1 time when someone uses the extension,
+  // instead of appearing on every new tab.
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    chrome.storage.local.get(['ts_radar_shown_once', 'ts_radar_dismissed'], (res) => {
+      if (res.ts_radar_shown_once || res.ts_radar_dismissed) return;
+      chrome.storage.local.set({ ts_radar_shown_once: true });
+      renderRadarOnce();
+    });
+  } else {
+    renderRadarOnce();
+  }
 
-  const toolName = document.title.split(/[-|–—•]/)[0].trim() || host;
+  function renderRadarOnce() {
+    if (document.getElementById('toolscribe-radar-root')) return;
+    try { localStorage.setItem('ts_radar_dismissed', '1'); } catch {}
+    try { sessionStorage.setItem('ts_radar_dismissed', '1'); } catch {}
 
-  root.innerHTML = `
-    <div id="toolscribe-radar-pill" title="ToolScribe Community Radar">
-      <div class="ts-radar-icon">⚡</div>
-      <span class="ts-radar-text">ToolScribe</span>
-      <span class="ts-radar-score">Radar</span>
-    </div>
+    const root = document.createElement('div');
+    root.id = 'toolscribe-radar-root';
 
-    <div id="toolscribe-radar-card" style="display: none;">
-      <div class="ts-card-header">
-        <span class="ts-card-title">${escapeHtml(toolName)}</span>
-        <button id="ts-card-close-btn" class="ts-card-close" title="Dismiss">&times;</button>
+    const toolName = document.title.split(/[-|–—•]/)[0].trim() || host;
+
+    root.innerHTML = `
+      <div id="toolscribe-radar-pill" title="ToolScribe Community Radar">
+        <div class="ts-radar-icon">⚡</div>
+        <span class="ts-radar-text">ToolScribe</span>
+        <span class="ts-radar-score">Radar</span>
       </div>
-      <div class="ts-card-body">
-        <p>Curator-moderated community insights & gotchas for this platform.</p>
-        <div class="ts-card-highlight">
-          <strong>Gotcha / Best For:</strong> Inspect pricing tiers & open-source alternatives before committing.
+
+      <div id="toolscribe-radar-card" style="display: none;">
+        <div class="ts-card-header">
+          <span class="ts-card-title">${escapeHtml(toolName)}</span>
+          <button id="ts-card-close-btn" class="ts-card-close" title="Dismiss">&times;</button>
         </div>
+        <div class="ts-card-body">
+          <p>Curator-moderated community insights & gotchas for this platform.</p>
+          <div class="ts-card-highlight">
+            <strong>Gotcha / Best For:</strong> Inspect pricing tiers & open-source alternatives before committing.
+          </div>
+        </div>
+        <button id="ts-card-clip-btn" class="ts-card-cta">
+          📌 Open Extension Popup to Save
+        </button>
       </div>
-      <button id="ts-card-clip-btn" class="ts-card-cta">
-        📌 Open Extension Popup to Save
-      </button>
-    </div>
-  `;
+    `;
 
-  document.body.appendChild(root);
+    document.body.appendChild(root);
 
-  const pill = root.querySelector('#toolscribe-radar-pill');
-  const card = root.querySelector('#toolscribe-radar-card');
-  const closeBtn = root.querySelector('#ts-card-close-btn');
-  const clipBtn = root.querySelector('#ts-card-clip-btn');
+    const pill = root.querySelector('#toolscribe-radar-pill');
+    const card = root.querySelector('#toolscribe-radar-card');
+    const closeBtn = root.querySelector('#ts-card-close-btn');
+    const clipBtn = root.querySelector('#ts-card-clip-btn');
 
-  pill.addEventListener('click', () => {
-    const isVisible = card.style.display !== 'none';
-    card.style.display = isVisible ? 'none' : 'flex';
-  });
+    pill.addEventListener('click', () => {
+      const isVisible = card.style.display !== 'none';
+      card.style.display = isVisible ? 'none' : 'flex';
+    });
 
-  closeBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    root.remove();
-    sessionStorage.setItem('ts_radar_dismissed', '1');
-  });
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      root.remove();
+      if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+        chrome.storage.local.set({ ts_radar_dismissed: true, ts_radar_shown_once: true });
+      }
+    });
 
-  clipBtn.addEventListener('click', () => {
-    clipBtn.textContent = 'Click the ⚡ ToolScribe icon in your toolbar!';
-    setTimeout(() => {
-      card.style.display = 'none';
-    }, 1500);
-  });
+    clipBtn.addEventListener('click', () => {
+      clipBtn.textContent = 'Click the ⚡ ToolScribe icon in your toolbar!';
+      if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+        chrome.storage.local.set({ ts_radar_dismissed: true, ts_radar_shown_once: true });
+      }
+      setTimeout(() => {
+        card.style.display = 'none';
+      }, 1500);
+    });
+  }
 
   function escapeHtml(str) {
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

@@ -52,7 +52,7 @@ export default function EmbedStackModal({ open, onClose, profile, shelfTools }: 
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
   }, [profile, shelfTools]);
 
-  const targetProfileUrl = `https://tool-scribes.vercel.app/u/${profile.username}`;
+  const targetProfileUrl = `https://tool-scribes-p9lk.vercel.app/u/${profile.username}`;
 
   const markdownSnippet = `[![${profile.displayName || profile.username}'s Stack on ToolScribe](${svgDataUrl})](${targetProfileUrl})`;
   const htmlSnippet = `<a href="${targetProfileUrl}" target="_blank" rel="noopener noreferrer">\n  <img src="${svgDataUrl}" alt="${profile.displayName || profile.username}'s Stack on ToolScribe" />\n</a>`;
